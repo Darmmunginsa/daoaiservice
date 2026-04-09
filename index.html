@@ -46,7 +46,7 @@ img{display:block;max-width:100%}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const {useState,useEffect,useRef}=React,h=React.createElement;
-const SK='serviceai_projects_v1',SK_URL='serviceai_sheets_url';
+const SK='serviceai_projects_v1',SK_URL='serviceai_sheets_url',SK_NOTIF='serviceai_notif';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
 const fmtDate=s=>{if(!s)return'-';try{return new Date(s).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}catch{return s}};
 const daysLeft=e=>{if(!e)return null;return Math.ceil((new Date(e)-Date.now())/86400000)};
@@ -70,6 +70,8 @@ function loadLocal(){try{const d=localStorage.getItem(SK);return d?JSON.parse(d)
 function saveLocal(d){try{localStorage.setItem(SK,JSON.stringify(d))}catch{}}
 function getSheetsUrl(){return localStorage.getItem(SK_URL)||null}
 function setSheetsUrl(url){if(url)localStorage.setItem(SK_URL,url);else localStorage.removeItem(SK_URL)}
+function getNotifCfg(){try{return JSON.parse(localStorage.getItem(SK_NOTIF)||'{}')}catch{return{}}}
+function setNotifCfg(cfg){localStorage.setItem(SK_NOTIF,JSON.stringify(cfg))}
 
 async function loadData(setSync){
   setSync('loading');
@@ -156,44 +158,137 @@ function SettingsPanel({syncStatus,onClose,onConnected}){
   const[testing,setTesting]=useState(false);
   const[msg,setMsg]=useState('');
   const sc={ok:'#22c55e',saving:'#f59e0b',error:'#ef4444',loading:'#f59e0b',none:'#9ca3af'};
-
   const test=async()=>{
     if(!url.includes('script.google.com')){setMsg('URL ไม่ถูกต้อง');return}
     setTesting(true);setMsg('');
-    try{
-      const res=await fetch(url);const data=await res.json();
-      if(Array.isArray(data)){
-        setSheetsUrl(url);
-        setMsg(`เชื่อมต่อสำเร็จ! พบข้อมูล ${data.length} Project`);
-        onConnected(data);
-      } else setMsg('เชื่อมต่อได้แต่ข้อมูลผิดรูปแบบ');
-    }catch(e){setMsg('เชื่อมต่อไม่ได้: '+e.message+'\nตรวจสอบว่า Deploy เป็น "Anyone"')}
+    try{const res=await fetch(url);const data=await res.json();if(Array.isArray(data)){setSheetsUrl(url);setMsg(`เชื่อมต่อสำเร็จ! พบข้อมูล ${data.length} Project`);onConnected(data)}else setMsg('เชื่อมต่อได้แต่ข้อมูลผิดรูปแบบ')}catch(e){setMsg('เชื่อมต่อไม่ได้: '+e.message)}
     setTesting(false);
   };
-
   return h('div',{style:s.card({borderColor:'#378add',marginBottom:16})},
     h(Row,{style:{marginBottom:14}},
-      h('div',{style:{flex:1}},
-        h('p',{style:{margin:0,fontWeight:500,fontSize:15}},'ตั้งค่า Google Sheets'),
-        h(Row,{style:{marginTop:4,gap:6}},
-          h('span',{style:{width:8,height:8,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block'}}),
-          h('span',{style:{fontSize:12,color:C.muted()}},{ok:'ซิงก์แล้ว',saving:'กำลังซิงก์...',error:'ซิงก์ไม่สำเร็จ',loading:'กำลังโหลด...',none:'ยังไม่ได้เชื่อมต่อ'}[syncStatus]||'ยังไม่ได้เชื่อมต่อ')
-        )
-      ),
+      h('div',{style:{flex:1}},h('p',{style:{margin:0,fontWeight:500,fontSize:15}},'ตั้งค่า Google Sheets'),h(Row,{style:{marginTop:4,gap:6}},h('span',{style:{width:8,height:8,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block'}}),h('span',{style:{fontSize:12,color:C.muted()}},{ok:'ซิงก์แล้ว',saving:'กำลังซิงก์...',error:'ซิงก์ไม่สำเร็จ',loading:'กำลังโหลด...',none:'ยังไม่ได้เชื่อมต่อ'}[syncStatus]||'ยังไม่ได้เชื่อมต่อ'))),
       h(Btn,{onClick:onClose},'✕')
     ),
-    h(Fld,{label:'Apps Script Web App URL'},
-      h('input',{value:url,onChange:e=>setUrl(e.target.value),placeholder:'https://script.google.com/macros/s/.../exec',style:{fontFamily:'monospace',fontSize:12}})
-    ),
-    h('div',{style:{background:C.bg2(),borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.muted(),lineHeight:1.7}},
-      h('p',{style:{margin:'0 0 2px',fontWeight:500,fontSize:13}},'วิธีรับ URL:'),
-      h('p',{style:{margin:0}},'Google Sheet → Extensions → Apps Script → Deploy → New deployment → Web app → Anyone → Deploy → คัดลอก URL')
-    ),
-    h(Row,{style:{justifyContent:'flex-end'}},
-      url&&h(Btn,{onClick:()=>{setSheetsUrl('');setUrl('');setMsg('ยกเลิกแล้ว');onConnected(null)},style:{color:'#dc2626',marginRight:4}},'ยกเลิกการเชื่อมต่อ'),
-      h(BtnP,{onClick:test,disabled:testing||!url},testing?'กำลังทดสอบ...':'ทดสอบและเชื่อมต่อ')
-    ),
+    h(Fld,{label:'Apps Script Web App URL'},h('input',{value:url,onChange:e=>setUrl(e.target.value),placeholder:'https://script.google.com/macros/s/.../exec',style:{fontFamily:'monospace',fontSize:12}})),
+    h('div',{style:{background:C.bg2(),borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.muted(),lineHeight:1.7}},h('p',{style:{margin:'0 0 2px',fontWeight:500,fontSize:13}},'วิธีรับ URL:'),h('p',{style:{margin:0}},'Google Sheet → Extensions → Apps Script → Deploy → New deployment → Web app → Anyone → Deploy → คัดลอก URL')),
+    h(Row,{style:{justifyContent:'flex-end'}},url&&h(Btn,{onClick:()=>{setSheetsUrl('');setUrl('');setMsg('ยกเลิกแล้ว');onConnected(null)},style:{color:'#dc2626',marginRight:4}},'ยกเลิกการเชื่อมต่อ'),h(BtnP,{onClick:test,disabled:testing||!url},testing?'กำลังทดสอบ...':'ทดสอบและเชื่อมต่อ')),
     msg&&h('p',{style:{margin:'10px 0 0',fontSize:13,whiteSpace:'pre-line',color:msg.includes('สำเร็จ')?'#16a34a':'#dc2626'}},msg)
+  )
+}
+
+function buildAlertText(projects,days){
+  const items=[];
+  projects.forEach(p=>{
+    const cd=daysLeft(p.contractEnd);
+    if(cd!==null&&cd<=days&&cd>=0)items.push(`📋 สัญญา: ${p.name} (${p.client}) — เหลือ ${cd} วัน (หมด ${fmtDate(p.contractEnd)})`);
+    (p.devices||[]).forEach(d=>{
+      const wd=daysLeft(d.warrantyEnd);
+      if(wd!==null&&wd<=days&&wd>=0)items.push(`🔧 Warranty: ${d.name} / ${p.name} — เหลือ ${wd} วัน (หมด ${fmtDate(d.warrantyEnd)})`);
+    });
+    const past=[];
+    const cd2=daysLeft(p.contractEnd);if(cd2!==null&&cd2<0)past.push(`📋 สัญญา: ${p.name} (${p.client}) — หมดอายุแล้ว ${Math.abs(cd2)} วัน`);
+    (p.devices||[]).forEach(d=>{const wd=daysLeft(d.warrantyEnd);if(wd!==null&&wd<0)past.push(`🔧 Warranty: ${d.name} / ${p.name} — หมดอายุแล้ว ${Math.abs(wd)} วัน`)});
+    items.push(...past);
+  });
+  return items;
+}
+
+function NotifPanel({projects,onClose}){
+  const cfg=getNotifCfg();
+  const[wh,setWh]=useState(cfg.webhook||'');
+  const[whType,setWhType]=useState(cfg.webhookType||'line');
+  const[lineToken,setLineToken]=useState(cfg.lineToken||'');
+  const[days,setDays]=useState(cfg.days||60);
+  const[sending,setSending]=useState(false);
+  const[result,setResult]=useState('');
+  const[preview,setPreview]=useState(false);
+
+  const alertItems=buildAlertText(projects,days);
+
+  const save=()=>{setNotifCfg({webhook:wh,webhookType:whType,lineToken,days:Number(days)});setResult('บันทึกการตั้งค่าแล้ว');setTimeout(()=>setResult(''),2000)};
+
+  const buildPayload=()=>{
+    const now=new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'});
+    const body=alertItems.length>0
+      ?`🔔 ServiceAI แจ้งเตือน — ${now}\nพบ ${alertItems.length} รายการที่ใกล้หมดหรือหมดอายุ:\n\n${alertItems.join('\n')}`
+      :`✅ ServiceAI — ${now}\nไม่มีรายการที่ใกล้หมดอายุภายใน ${days} วัน`;
+    if(whType==='line')return{message:body};
+    if(whType==='slack')return{text:body};
+    if(whType==='discord')return{content:body};
+    if(whType==='teams')return{text:body};
+    return{text:body,message:body,content:body};
+  };
+
+  const sendWebhook=async()=>{
+    if(!wh&&!(whType==='line'&&lineToken)){setResult('กรุณาใส่ URL หรือ Token ก่อน');return}
+    setSending(true);setResult('');
+    try{
+      let res;
+      if(whType==='line'){
+        const msg=buildPayload().message;
+        res=await fetch('https://notify-api.line.me/api/notify',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Bearer '+lineToken},body:'message='+encodeURIComponent(msg)});
+      } else {
+        res=await fetch(wh,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())});
+      }
+      setResult(res.ok?'ส่งสำเร็จ! ✓':'ส่งไม่สำเร็จ: HTTP '+res.status);
+    }catch(e){setResult('เกิดข้อผิดพลาด: '+e.message)}
+    setSending(false);
+  };
+
+  const sendEmail=()=>{
+    const now=new Date().toLocaleDateString('th-TH');
+    const subject=`[ServiceAI] แจ้งเตือนสัญญา/Warranty ใกล้หมด — ${now}`;
+    const body=alertItems.length>0?`แจ้งเตือนจาก ServiceAI\n\nพบ ${alertItems.length} รายการที่ใกล้หมดหรือหมดอายุ:\n\n${alertItems.join('\n')}\n\nกรุณาดำเนินการต่อเนื่อง`:`ไม่มีรายการที่ใกล้หมดอายุภายใน ${days} วัน`;
+    window.location.href=`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const WH_TYPES=[['line','Line Notify'],['slack','Slack'],['discord','Discord'],['teams','MS Teams'],['custom','Custom Webhook']];
+
+  return h('div',{style:s.card({borderColor:'#8b5cf6',marginBottom:16})},
+    h(Row,{style:{marginBottom:14}},
+      h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'ตั้งค่าการแจ้งเตือน'),
+      h(Btn,{onClick:onClose},'✕')
+    ),
+    h(Fld,{label:'แจ้งเตือนล่วงหน้า (วัน)'},
+      h(Row,{},
+        h('input',{type:'range',min:7,max:180,step:1,value:days,onChange:e=>setDays(e.target.value),style:{flex:1}}),
+        h('span',{style:{minWidth:48,textAlign:'right',fontSize:13,fontWeight:500}},days+' วัน')
+      )
+    ),
+    alertItems.length>0&&h('div',{style:{background:isDark()?'#1a1a2a':'#faf5ff',border:'0.5px solid #8b5cf6',borderRadius:8,padding:'10px 12px',marginBottom:12}},
+      h(Row,{style:{marginBottom:preview?8:0}},
+        h('p',{style:{margin:0,fontSize:13,color:'#7c3aed',flex:1,fontWeight:500}},`พบ ${alertItems.length} รายการใกล้หมด/หมดอายุ`),
+        h('button',{onClick:()=>setPreview(!preview),style:{background:'none',border:'none',cursor:'pointer',fontSize:12,color:'#8b5cf6'}},preview?'ซ่อน':'ดูทั้งหมด')
+      ),
+      preview&&h('div',{style:{fontSize:12,lineHeight:1.8}},alertItems.map((it,i)=>h('p',{key:i,style:{margin:0}},it)))
+    ),
+    alertItems.length===0&&h('div',{style:{background:isDark()?'#0a1f0a':'#f0fdf4',border:'0.5px solid #22c55e',borderRadius:8,padding:'8px 12px',marginBottom:12,fontSize:12,color:'#16a34a'}},`✅ ไม่มีรายการหมดอายุภายใน ${days} วัน`),
+    h('div',{style:{borderTop:`0.5px solid ${C.border()}`,paddingTop:12,marginBottom:12}},
+      h('p',{style:{margin:'0 0 10px',fontWeight:500,fontSize:14}},'ส่งผ่าน Webhook'),
+      h(Fld,{label:'ประเภท'},
+        h('select',{value:whType,onChange:e=>setWhType(e.target.value)},WH_TYPES.map(([v,lb])=>h('option',{key:v,value:v},lb)))
+      ),
+      whType==='line'
+        ?h(Fld,{label:'Line Notify Token'},h('input',{value:lineToken,onChange:e=>setLineToken(e.target.value),placeholder:'รับได้จาก notify-bot.line.me/th',type:'password'}))
+        :h(Fld,{label:'Webhook URL'},h('input',{value:wh,onChange:e=>setWh(e.target.value),placeholder:`https://${whType==='slack'?'hooks.slack.com/services/...':whType==='discord'?'discord.com/api/webhooks/...':whType==='teams'?'outlook.office.com/webhook/...':'your-webhook-url'}`,style:{fontFamily:'monospace',fontSize:11}})),
+      h('div',{style:{background:C.bg2(),borderRadius:6,padding:'8px 10px',marginBottom:10,fontSize:11,color:C.muted(),lineHeight:1.7}},
+        whType==='line'&&'Line Notify: notify-bot.line.me/th → Log in → "Generate token" → ตั้งชื่อ → Generate',
+        whType==='slack'&&'Slack: api.slack.com/apps → Create App → Incoming Webhooks → Add New Webhook',
+        whType==='discord'&&'Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy URL',
+        whType==='teams'&&'Teams: Channel → ··· → Connectors → Incoming Webhook → Configure → Copy URL',
+        whType==='custom'&&'ส่ง POST JSON ไปที่ URL ที่ระบุ เหมาะสำหรับ Make.com, n8n, Zapier ฯลฯ'
+      ),
+      h(Row,{style:{gap:8}},
+        h(Btn,{onClick:save,style:{fontSize:12}},'บันทึกการตั้งค่า'),
+        h(BtnP,{onClick:sendWebhook,disabled:sending,style:{background:'#8b5cf6'}},sending?'กำลังส่ง...':'ส่งแจ้งเตือน Webhook')
+      )
+    ),
+    h('div',{style:{borderTop:`0.5px solid ${C.border()}`,paddingTop:12}},
+      h('p',{style:{margin:'0 0 8px',fontWeight:500,fontSize:14}},'ส่งผ่าน Email'),
+      h('p',{style:{margin:'0 0 8px',fontSize:12,color:C.muted()}},'เปิด email app พร้อมสรุปรายการแจ้งเตือน กรอก To แล้วกดส่งเอง'),
+      h(Btn,{onClick:sendEmail,style:{fontSize:13}},'✉️ เปิดร่าง Email แจ้งเตือน')
+    ),
+    result&&h('p',{style:{margin:'10px 0 0',fontSize:13,fontWeight:500,color:result.includes('สำเร็จ')||result.includes('บันทึก')?'#16a34a':'#dc2626'}},result)
   )
 }
 
@@ -663,7 +758,7 @@ function ProjectList({projects,onSelect,onAdd}){
 
 // --- MAIN APP ---
 function App(){
-  const[projects,setProjects]=useState([]);const[selId,setSelId]=useState(null);const[loading,setLoading]=useState(true);const[nav,setNav]=useState('dashboard');const[syncStatus,setSyncStatus]=useState('none');const[showSettings,setShowSettings]=useState(false);
+  const[projects,setProjects]=useState([]);const[selId,setSelId]=useState(null);const[loading,setLoading]=useState(true);const[nav,setNav]=useState('dashboard');const[syncStatus,setSyncStatus]=useState('none');const[showSettings,setShowSettings]=useState(false);const[showNotif,setShowNotif]=useState(false);
   const sc={ok:'#22c55e',saving:'#f59e0b',error:'#ef4444',loading:'#f59e0b',none:'#9ca3af'};
   const scLabel={ok:'ซิงก์แล้ว',saving:'กำลังซิงก์...',error:'ซิงก์ไม่สำเร็จ',loading:'กำลังโหลด...',none:'เชื่อมต่อ Sheets'};
 
@@ -677,22 +772,32 @@ function App(){
 
   if(loading)return h('div',{style:{padding:48,textAlign:'center'}},h('p',{style:{color:C.muted(),fontSize:14}},'กำลังโหลดข้อมูล...'));
 
+  const urgentCount=buildAlertText(projects,getNotifCfg().days||60).length;
   return h('div',{},
     h('div',{style:{borderBottom:`0.5px solid ${C.border()}`,marginBottom:16,display:'flex',gap:4,alignItems:'center'}},
       h('span',{className:'brand',style:{fontSize:15,fontWeight:600,marginRight:8,padding:'0 4px 10px',color:'#378add'}},'ServiceAI'),
       h('div',{className:'nav-tabs',style:{display:'flex',gap:4}},
-        ['dashboard','projects'].map(v=>h('button',{key:v,className:'tab-btn',onClick:()=>{setNav(v);setSelId(null);setShowSettings(false)},style:{background:'none',border:'none',cursor:'pointer',padding:'10px 14px',fontSize:13,fontWeight:nav===v&&!sel&&!showSettings?500:400,color:nav===v&&!sel&&!showSettings?C.text():C.muted(),borderBottom:nav===v&&!sel&&!showSettings?`2px solid ${C.text()}`:'2px solid transparent'}},v==='dashboard'?'Dashboard':'Projects'))
+        ['dashboard','projects'].map(v=>h('button',{key:v,className:'tab-btn',onClick:()=>{setNav(v);setSelId(null);setShowSettings(false);setShowNotif(false)},style:{background:'none',border:'none',cursor:'pointer',padding:'10px 14px',fontSize:13,fontWeight:nav===v&&!sel&&!showSettings&&!showNotif?500:400,color:nav===v&&!sel&&!showSettings&&!showNotif?C.text():C.muted(),borderBottom:nav===v&&!sel&&!showSettings&&!showNotif?`2px solid ${C.text()}`:'2px solid transparent'}},v==='dashboard'?'Dashboard':'Projects'))
       ),
       alerts.length>0&&h('span',{style:{background:'#fee2e2',color:'#dc2626',borderRadius:10,padding:'1px 7px',fontSize:11,fontWeight:500,marginLeft:4}},String(alerts.length)),
-      h('div',{style:{marginLeft:'auto',paddingBottom:10}},
-        h('button',{onClick:()=>{setShowSettings(!showSettings);setSelId(null)},style:{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.muted(),background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:20,padding:'4px 10px',cursor:'pointer'}},
+      h('div',{style:{marginLeft:'auto',paddingBottom:10,display:'flex',gap:6,alignItems:'center'}},
+        h('button',{
+          onClick:()=>{setShowNotif(!showNotif);setShowSettings(false);setSelId(null)},
+          title:'การแจ้งเตือน',
+          style:{position:'relative',background:showNotif?C.bg2():'transparent',border:`0.5px solid ${C.border()}`,borderRadius:20,padding:'4px 10px',cursor:'pointer',fontSize:13,display:'flex',alignItems:'center',gap:4,color:C.muted()}
+        },
+          '🔔',
+          urgentCount>0&&h('span',{style:{background:'#dc2626',color:'#fff',borderRadius:8,padding:'0 5px',fontSize:10,fontWeight:600,minWidth:16,textAlign:'center'}},urgentCount)
+        ),
+        h('button',{onClick:()=>{setShowSettings(!showSettings);setShowNotif(false);setSelId(null)},style:{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.muted(),background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:20,padding:'4px 10px',cursor:'pointer'}},
           h('span',{style:{width:7,height:7,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block',flexShrink:0}}),
           h('span',{className:'sync-label'},scLabel[syncStatus]||'เชื่อมต่อ Sheets')
         )
       )
     ),
     showSettings&&h(SettingsPanel,{syncStatus,onClose:()=>setShowSettings(false),onConnected:(data)=>{if(data){setProjects(data);saveLocal(data)}setSyncStatus(data?'ok':'none');setShowSettings(false)}}),
-    !showSettings&&(sel?h(ProjectDetail,{p:sel,onBack:()=>setSelId(null),onUpdate:upd=>update(sel.id,upd)}):nav==='dashboard'?h(DashboardView,{projects,onSelect:id=>{setSelId(id);setNav('projects')}}):h(ProjectList,{projects,onSelect:setSelId,onAdd:addProject}))
+    showNotif&&h(NotifPanel,{projects,onClose:()=>setShowNotif(false)}),
+    !showSettings&&!showNotif&&(sel?h(ProjectDetail,{p:sel,onBack:()=>setSelId(null),onUpdate:upd=>update(sel.id,upd)}):nav==='dashboard'?h(DashboardView,{projects,onSelect:id=>{setSelId(id);setNav('projects')}}):h(ProjectList,{projects,onSelect:setSelId,onAdd:addProject}))
   )
 }
 
