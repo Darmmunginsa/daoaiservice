@@ -467,7 +467,7 @@ function AITab({p,onUpdate}){
   const[inp,setInp]=useState('');
   const[loading,setLoading]=useState(false);
   const[imgData,setImgData]=useState(null);
-  const[pendAct,setPendAct]=useState(null);
+  const[pendActs,setPendActs]=useState([]);
   const[saved,setSaved]=useState('');
   const[apiKey,setApiKey]=useState(localStorage.getItem('ai_api_key')||'');
   const[showKey,setShowKey]=useState(!localStorage.getItem('ai_api_key'));
@@ -481,56 +481,62 @@ function AITab({p,onUpdate}){
 ${ctx}
 
 == เมื่อผู้ใช้ต้องการบันทึกข้อมูล หรือส่งรูปภาพป้ายอุปกรณ์/nameplate ==
-สรุปข้อมูลที่พบเป็นภาษาไทย แล้วแนบ JSON block ท้ายสุด:
+สรุปข้อมูลที่พบเป็นภาษาไทย แล้วแนบ JSON block แยกกันทีละ block สำหรับแต่ละรายการ
+ถ้าพบหลายรายการ ให้สร้างหลาย JSON block ต่อเนื่องกัน (ไม่ใช่ array) เช่น:
 
-เพิ่มอุปกรณ์ใหม่:
 \`\`\`json
-{"action":"add_device","data":{"name":"ชื่ออุปกรณ์","model":"รุ่น","serial":"S/N","location":"ตำแหน่ง","warrantyEnd":"YYYY-MM-DD"}}
+{"action":"add_device","data":{"name":"UPS 1","model":"SUA3000","serial":"AA001","location":"ห้อง Server","warrantyEnd":"2026-12-31"}}
+\`\`\`
+\`\`\`json
+{"action":"add_device","data":{"name":"UPS 2","model":"SUA1000","serial":"BB002","location":"ห้อง Network","warrantyEnd":"2025-06-30"}}
 \`\`\`
 
-บันทึกประวัติซ่อมบำรุง:
-\`\`\`json
-{"action":"add_history","deviceMatch":"ชื่ออุปกรณ์ที่ใกล้เคียง","data":{"type":"battery","date":"YYYY-MM-DD","note":"รายละเอียด"}}
-\`\`\`
-(type: battery=เปลี่ยนแบต, repair=ซ่อม, pm=ตรวจสอบ, replace=เปลี่ยนอะไหล่, other=อื่นๆ)
+รูปแบบ action ที่รองรับ:
+- เพิ่มอุปกรณ์: {"action":"add_device","data":{"name":"","model":"","serial":"","location":"","warrantyEnd":"YYYY-MM-DD"}}
+- ประวัติซ่อม: {"action":"add_history","deviceMatch":"ชื่ออุปกรณ์","data":{"type":"battery","date":"YYYY-MM-DD","note":""}}
+  (type: battery=เปลี่ยนแบต, repair=ซ่อม, pm=ตรวจสอบ, replace=เปลี่ยนอะไหล่, other=อื่นๆ)
+- รายรับ-จ่าย: {"action":"add_finance","data":{"type":"income","amount":0,"description":"","date":"YYYY-MM-DD"}}
+- Check-in: {"action":"add_visit","data":{"note":""}}
 
-บันทึกรายรับ-จ่าย:
-\`\`\`json
-{"action":"add_finance","data":{"type":"income","amount":0,"description":"รายละเอียด","date":"YYYY-MM-DD"}}
-\`\`\`
-
-บันทึก Check-in:
-\`\`\`json
-{"action":"add_visit","data":{"note":"หมายเหตุ"}}
-\`\`\`
-
+สำคัญ: พบกี่รายการก็สร้างกี่ JSON block เสมอ อย่ารวมเป็น array
 ถ้าไม่ใช่การบันทึกข้อมูล ตอบปกติไม่ต้องมี JSON`;
 
   const ACT_LABEL={add_device:'เพิ่มอุปกรณ์ใหม่',add_history:'บันทึกประวัติซ่อม',add_finance:'บันทึกรายรับ-จ่าย',add_visit:'บันทึก Check-in'};
   const ACT_COLOR={add_device:'#378add',add_history:'#f59e0b',add_finance:'#22c55e',add_visit:'#8b5cf6'};
 
-  const parseAct=text=>{const m=text.match(/```json\s*([\s\S]*?)\s*```/);if(!m)return null;try{const j=JSON.parse(m[1]);return j.action?j:null}catch{return null}};
+  const parseActs=text=>{const acts=[];const re=/```json\s*([\s\S]*?)\s*```/g;let m;while((m=re.exec(text))!==null){try{const j=JSON.parse(m[1]);if(j.action)acts.push(j);else if(Array.isArray(j))j.forEach(x=>x.action&&acts.push(x))}catch{}}return acts};
 
-  const execAct=act=>{
-    if(!act)return;
+  const applyActs=(acts,baseP)=>{
+    let proj={...baseP};
     const today=new Date().toISOString().slice(0,10);
-    if(act.action==='add_device'){
-      onUpdate({devices:[...(p.devices||[]),{id:uid(),...act.data,history:[]}]});
-      setSaved('เพิ่มอุปกรณ์ "'+act.data.name+'" แล้ว');
-    } else if(act.action==='add_history'){
-      const devs=p.devices||[];
-      const key=(act.deviceMatch||'').toLowerCase();
-      const dev=devs.find(d=>d.name.toLowerCase().includes(key)||key.includes(d.name.toLowerCase()))||devs[devs.length-1];
-      if(dev){onUpdate({devices:devs.map(d=>d.id===dev.id?{...d,history:[...(d.history||[]),{id:uid(),...act.data}]}:d)});setSaved('บันทึกประวัติให้ "'+dev.name+'" แล้ว')}
-      else setSaved('ไม่พบอุปกรณ์ที่ตรงกัน ลองบันทึกในแท็บอุปกรณ์แทน');
-    } else if(act.action==='add_finance'){
-      onUpdate({finances:[...(p.finances||[]),{id:uid(),date:today,...act.data}]});
-      setSaved('บันทึกรายการเงินแล้ว');
-    } else if(act.action==='add_visit'){
-      onUpdate({...p,visits:[...(p.visits||[]),{id:uid(),date:new Date().toISOString(),...act.data}]});
-      setSaved('บันทึก Check-in แล้ว');
-    }
-    setPendAct(null);setTimeout(()=>setSaved(''),3000);
+    const labels=[];
+    acts.forEach(act=>{
+      if(act.action==='add_device'){
+        proj={...proj,devices:[...(proj.devices||[]),{id:uid(),...act.data,history:[]}]};
+        labels.push('เพิ่มอุปกรณ์ "'+act.data.name+'"');
+      } else if(act.action==='add_history'){
+        const key=(act.deviceMatch||'').toLowerCase();
+        const devs=proj.devices||[];
+        const dev=devs.find(d=>d.name.toLowerCase().includes(key)||key.includes(d.name.toLowerCase()))||devs[devs.length-1];
+        if(dev){proj={...proj,devices:devs.map(d=>d.id===dev.id?{...d,history:[...(d.history||[]),{id:uid(),...act.data}]}:d)};labels.push('ประวัติซ่อม "'+dev.name+'"')}
+      } else if(act.action==='add_finance'){
+        proj={...proj,finances:[...(proj.finances||[]),{id:uid(),date:today,...act.data}]};
+        labels.push('รายการเงิน "'+act.data.description+'"');
+      } else if(act.action==='add_visit'){
+        proj={...proj,visits:[...(proj.visits||[]),{id:uid(),date:new Date().toISOString(),...act.data}]};
+        labels.push('Check-in');
+      }
+    });
+    return{proj,labels};
+  };
+
+  const execAll=()=>{
+    if(!pendActs.length)return;
+    const{proj,labels}=applyActs(pendActs,p);
+    onUpdate(proj);
+    setSaved('บันทึกแล้ว '+pendActs.length+' รายการ: '+labels.join(', '));
+    setPendActs([]);
+    setTimeout(()=>setSaved(''),4000);
   };
 
   const attachImg=async e=>{const file=e.target.files[0];if(!file)return;setImgData(await resizeImg(file,1200));e.target.value=''};
@@ -546,7 +552,7 @@ ${ctx}
       const data=await res.json();
       if(data.error){setMsgs([...newMsgs,{role:'assistant',content:'Error: '+data.error.message}]);setLoading(false);return}
       const reply=data.content?.[0]?.text||'ไม่สามารถตอบได้';
-      const act=parseAct(reply);if(act)setPendAct(act);
+      const acts=parseActs(reply);if(acts.length>0)setPendActs(acts);
       const clean=reply.replace(/```json[\s\S]*?```/g,'').trim();
       setMsgs([...newMsgs,{role:'assistant',content:clean}]);
     }catch(e){setMsgs([...newMsgs,{role:'assistant',content:'เกิดข้อผิดพลาด: '+e.message}])}
@@ -575,10 +581,22 @@ ${ctx}
       loading&&h('div',{style:{alignSelf:'flex-start',color:C.muted(),fontSize:13}},'กำลังคิด...'),
       h('div',{ref:endRef})
     ),
-    pendAct&&h('div',{style:{background:isDark()?'#1a2a1a':'#f0fdf4',border:`1.5px solid ${ACT_COLOR[pendAct.action]||'#22c55e'}`,borderRadius:10,padding:'10px 12px',marginBottom:10}},
-      h('p',{style:{margin:'0 0 6px',fontWeight:500,fontSize:13,color:ACT_COLOR[pendAct.action]||'#16a34a'}},'น้อง AI ต้องการ: '+(ACT_LABEL[pendAct.action]||pendAct.action)),
-      h('div',{style:{background:isDark()?'#0f1f0f':'#dcfce7',borderRadius:6,padding:'6px 8px',marginBottom:8,fontSize:11,fontFamily:'monospace',color:isDark()?'#86efac':'#166534',whiteSpace:'pre-wrap'}},JSON.stringify(pendAct.data,null,2)),
-      h(Row,{},h(Btn,{onClick:()=>setPendAct(null),style:{fontSize:12}},'ยกเลิก'),h('button',{onClick:()=>execAct(pendAct),style:{background:ACT_COLOR[pendAct.action]||'#22c55e',color:'#fff',border:'none',borderRadius:8,padding:'7px 16px',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}},'บันทึกเข้าระบบ ✓'))
+    pendActs.length>0&&h('div',{style:{background:isDark()?'#1a2a1a':'#f0fdf4',border:'1.5px solid #22c55e',borderRadius:10,padding:'10px 12px',marginBottom:10}},
+      h('p',{style:{margin:'0 0 8px',fontWeight:500,fontSize:13,color:'#16a34a'}},'น้อง AI พบข้อมูล '+pendActs.length+' รายการ — ยืนยันก่อนบันทึก'),
+      pendActs.map((act,i)=>{
+        const label=ACT_LABEL[act.action]||act.action;
+        const color=ACT_COLOR[act.action]||'#22c55e';
+        const preview=act.action==='add_device'?`${act.data.name} / ${act.data.model||'-'} / S/N: ${act.data.serial||'-'}`:act.action==='add_history'?`${act.data.type} · ${act.data.date} · ${act.data.note||''}`:act.action==='add_finance'?`${act.data.type==='income'?'รับ':'จ่าย'} ${act.data.amount} ฿ · ${act.data.description}`:`Check-in · ${act.data.note||''}`;
+        return h('div',{key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderTop:i>0?`0.5px solid ${C.border()}`:'none'}},
+          h('span',{style:{background:color,color:'#fff',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:500,whiteSpace:'nowrap',flexShrink:0}},label),
+          h('span',{style:{fontSize:12,flex:1,color:C.text()}},preview),
+          h('button',{onClick:()=>setPendActs(pendActs.filter((_,j)=>j!==i)),style:{background:'none',border:'none',cursor:'pointer',color:C.muted(),fontSize:16,lineHeight:1,flexShrink:0}},'×')
+        )
+      }),
+      h(Row,{style:{marginTop:10}},
+        h(Btn,{onClick:()=>setPendActs([]),style:{fontSize:12}},'ยกเลิกทั้งหมด'),
+        h('button',{onClick:execAll,style:{background:'#16a34a',color:'#fff',border:'none',borderRadius:8,padding:'7px 16px',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}},'บันทึกทั้งหมด ('+pendActs.length+') ✓')
+      )
     ),
     saved&&h('p',{style:{fontSize:13,color:'#16a34a',margin:'0 0 8px',fontWeight:500}},'✓ '+saved),
     imgData&&h(Row,{style:{marginBottom:8,background:C.bg2(),borderRadius:8,padding:'6px 10px'}},
