@@ -198,6 +198,8 @@ function NotifPanel({projects,onClose}){
   const[wh,setWh]=useState(cfg.webhook||'');
   const[whType,setWhType]=useState(cfg.webhookType||'line');
   const[lineToken,setLineToken]=useState(cfg.lineToken||'');
+  const[tgToken,setTgToken]=useState(cfg.tgToken||'');
+  const[tgChatId,setTgChatId]=useState(cfg.tgChatId||'');
   const[days,setDays]=useState(cfg.days||60);
   const[sending,setSending]=useState(false);
   const[result,setResult]=useState('');
@@ -205,7 +207,7 @@ function NotifPanel({projects,onClose}){
 
   const alertItems=buildAlertText(projects,days);
 
-  const save=()=>{setNotifCfg({webhook:wh,webhookType:whType,lineToken,days:Number(days)});setResult('บันทึกการตั้งค่าแล้ว');setTimeout(()=>setResult(''),2000)};
+  const save=()=>{setNotifCfg({webhook:wh,webhookType:whType,lineToken,tgToken,tgChatId,days:Number(days)});setResult('บันทึกการตั้งค่าแล้ว');setTimeout(()=>setResult(''),2000)};
 
   const buildPayload=()=>{
     const now=new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'});
@@ -213,6 +215,7 @@ function NotifPanel({projects,onClose}){
       ?`🔔 ServiceAI แจ้งเตือน — ${now}\nพบ ${alertItems.length} รายการที่ใกล้หมดหรือหมดอายุ:\n\n${alertItems.join('\n')}`
       :`✅ ServiceAI — ${now}\nไม่มีรายการที่ใกล้หมดอายุภายใน ${days} วัน`;
     if(whType==='line')return{message:body};
+    if(whType==='telegram')return{text:body,parse_mode:'Markdown'};
     if(whType==='slack')return{text:body};
     if(whType==='discord')return{content:body};
     if(whType==='teams')return{text:body};
@@ -220,17 +223,21 @@ function NotifPanel({projects,onClose}){
   };
 
   const sendWebhook=async()=>{
-    if(!wh&&!(whType==='line'&&lineToken)){setResult('กรุณาใส่ URL หรือ Token ก่อน');return}
+    if(!wh&&!(whType==='line'&&lineToken)&&!(whType==='telegram'&&tgToken&&tgChatId)){setResult('กรุณาใส่ Token / Chat ID หรือ URL ก่อน');return}
     setSending(true);setResult('');
     try{
       let res;
       if(whType==='line'){
         const msg=buildPayload().message;
         res=await fetch('https://notify-api.line.me/api/notify',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Bearer '+lineToken},body:'message='+encodeURIComponent(msg)});
+      } else if(whType==='telegram'){
+        const msg=buildPayload().text;
+        res=await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:tgChatId,text:msg})});
       } else {
         res=await fetch(wh,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())});
       }
-      setResult(res.ok?'ส่งสำเร็จ! ✓':'ส่งไม่สำเร็จ: HTTP '+res.status);
+      const rdata=await res.json().catch(()=>({}));
+      setResult(res.ok?'ส่งสำเร็จ! ✓':`ส่งไม่สำเร็จ: ${rdata.description||'HTTP '+res.status}`);
     }catch(e){setResult('เกิดข้อผิดพลาด: '+e.message)}
     setSending(false);
   };
@@ -242,7 +249,7 @@ function NotifPanel({projects,onClose}){
     window.location.href=`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  const WH_TYPES=[['line','Line Notify'],['slack','Slack'],['discord','Discord'],['teams','MS Teams'],['custom','Custom Webhook']];
+  const WH_TYPES=[['line','Line Notify'],['telegram','Telegram Bot'],['slack','Slack'],['discord','Discord'],['teams','MS Teams'],['custom','Custom Webhook']];
 
   return h('div',{style:s.card({borderColor:'#8b5cf6',marginBottom:16})},
     h(Row,{style:{marginBottom:14}},
@@ -270,9 +277,15 @@ function NotifPanel({projects,onClose}){
       ),
       whType==='line'
         ?h(Fld,{label:'Line Notify Token'},h('input',{value:lineToken,onChange:e=>setLineToken(e.target.value),placeholder:'รับได้จาก notify-bot.line.me/th',type:'password'}))
+        :whType==='telegram'
+        ?h('div',{},
+            h(Fld,{label:'Bot Token'},h('input',{value:tgToken,onChange:e=>setTgToken(e.target.value),placeholder:'1234567890:ABCdef... (จาก @BotFather)',type:'password'})),
+            h(Fld,{label:'Chat ID'},h('input',{value:tgChatId,onChange:e=>setTgChatId(e.target.value),placeholder:'-1001234567890 หรือ @ชื่อ_channel'}))
+          )
         :h(Fld,{label:'Webhook URL'},h('input',{value:wh,onChange:e=>setWh(e.target.value),placeholder:`https://${whType==='slack'?'hooks.slack.com/services/...':whType==='discord'?'discord.com/api/webhooks/...':whType==='teams'?'outlook.office.com/webhook/...':'your-webhook-url'}`,style:{fontFamily:'monospace',fontSize:11}})),
       h('div',{style:{background:C.bg2(),borderRadius:6,padding:'8px 10px',marginBottom:10,fontSize:11,color:C.muted(),lineHeight:1.7}},
         whType==='line'&&'Line Notify: notify-bot.line.me/th → Log in → "Generate token" → ตั้งชื่อ → Generate',
+        whType==='telegram'&&'1) ค้นหา @BotFather ใน Telegram → /newbot → ตั้งชื่อ → คัดลอก Token\n2) เพิ่ม Bot เข้า Group/Channel → ส่งข้อความใดก็ได้\n3) เปิด api.telegram.org/bot{TOKEN}/getUpdates → หา "chat":{"id":...} นั่นคือ Chat ID',
         whType==='slack'&&'Slack: api.slack.com/apps → Create App → Incoming Webhooks → Add New Webhook',
         whType==='discord'&&'Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy URL',
         whType==='teams'&&'Teams: Channel → ··· → Connectors → Incoming Webhook → Configure → Copy URL',
