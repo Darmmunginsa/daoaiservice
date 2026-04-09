@@ -462,41 +462,135 @@ function FinanceTab({p,onUpdate}){
   )
 }
 
-function AITab({p}){
-  const[msgs,setMsgs]=useState([]);const[inp,setInp]=useState('');const[loading,setLoading]=useState(false);const endRef=useRef();
-  const ctx=`Project: ${p.name}, ลูกค้า: ${p.client}, สัญญาหมด: ${fmtDate(p.contractEnd)}, อุปกรณ์: ${(p.devices||[]).map(d=>`${d.name} ${d.model||''} S/N:${d.serial||'-'} (Warranty: ${fmtDate(d.warrantyEnd)})`).join('; ')||'ไม่มี'}`;
+function AITab({p,onUpdate}){
+  const[msgs,setMsgs]=useState([]);
+  const[inp,setInp]=useState('');
+  const[loading,setLoading]=useState(false);
+  const[imgData,setImgData]=useState(null);
+  const[pendAct,setPendAct]=useState(null);
+  const[saved,setSaved]=useState('');
   const[apiKey,setApiKey]=useState(localStorage.getItem('ai_api_key')||'');
   const[showKey,setShowKey]=useState(!localStorage.getItem('ai_api_key'));
+  const endRef=useRef();const imgRef=useRef();
+
+  const ctx=`Project: ${p.name}, ลูกค้า: ${p.client}, สัญญาหมด: ${fmtDate(p.contractEnd)}\nอุปกรณ์ในระบบ: ${(p.devices||[]).map(d=>`${d.name} (${d.model||'-'})`).join(', ')||'ยังไม่มี'}`;
+
+  const SYS=`คุณคือผู้ช่วย AI สำหรับโปรแกรม ServiceAI ระบบจัดการ Project IT/UPS ตอบภาษาไทย กระชับ ตรงประเด็น
+
+ข้อมูล Project ปัจจุบัน:
+${ctx}
+
+== เมื่อผู้ใช้ต้องการบันทึกข้อมูล หรือส่งรูปภาพป้ายอุปกรณ์/nameplate ==
+สรุปข้อมูลที่พบเป็นภาษาไทย แล้วแนบ JSON block ท้ายสุด:
+
+เพิ่มอุปกรณ์ใหม่:
+\`\`\`json
+{"action":"add_device","data":{"name":"ชื่ออุปกรณ์","model":"รุ่น","serial":"S/N","location":"ตำแหน่ง","warrantyEnd":"YYYY-MM-DD"}}
+\`\`\`
+
+บันทึกประวัติซ่อมบำรุง:
+\`\`\`json
+{"action":"add_history","deviceMatch":"ชื่ออุปกรณ์ที่ใกล้เคียง","data":{"type":"battery","date":"YYYY-MM-DD","note":"รายละเอียด"}}
+\`\`\`
+(type: battery=เปลี่ยนแบต, repair=ซ่อม, pm=ตรวจสอบ, replace=เปลี่ยนอะไหล่, other=อื่นๆ)
+
+บันทึกรายรับ-จ่าย:
+\`\`\`json
+{"action":"add_finance","data":{"type":"income","amount":0,"description":"รายละเอียด","date":"YYYY-MM-DD"}}
+\`\`\`
+
+บันทึก Check-in:
+\`\`\`json
+{"action":"add_visit","data":{"note":"หมายเหตุ"}}
+\`\`\`
+
+ถ้าไม่ใช่การบันทึกข้อมูล ตอบปกติไม่ต้องมี JSON`;
+
+  const ACT_LABEL={add_device:'เพิ่มอุปกรณ์ใหม่',add_history:'บันทึกประวัติซ่อม',add_finance:'บันทึกรายรับ-จ่าย',add_visit:'บันทึก Check-in'};
+  const ACT_COLOR={add_device:'#378add',add_history:'#f59e0b',add_finance:'#22c55e',add_visit:'#8b5cf6'};
+
+  const parseAct=text=>{const m=text.match(/```json\s*([\s\S]*?)\s*```/);if(!m)return null;try{const j=JSON.parse(m[1]);return j.action?j:null}catch{return null}};
+
+  const execAct=act=>{
+    if(!act)return;
+    const today=new Date().toISOString().slice(0,10);
+    if(act.action==='add_device'){
+      onUpdate({devices:[...(p.devices||[]),{id:uid(),...act.data,history:[]}]});
+      setSaved('เพิ่มอุปกรณ์ "'+act.data.name+'" แล้ว');
+    } else if(act.action==='add_history'){
+      const devs=p.devices||[];
+      const key=(act.deviceMatch||'').toLowerCase();
+      const dev=devs.find(d=>d.name.toLowerCase().includes(key)||key.includes(d.name.toLowerCase()))||devs[devs.length-1];
+      if(dev){onUpdate({devices:devs.map(d=>d.id===dev.id?{...d,history:[...(d.history||[]),{id:uid(),...act.data}]}:d)});setSaved('บันทึกประวัติให้ "'+dev.name+'" แล้ว')}
+      else setSaved('ไม่พบอุปกรณ์ที่ตรงกัน ลองบันทึกในแท็บอุปกรณ์แทน');
+    } else if(act.action==='add_finance'){
+      onUpdate({finances:[...(p.finances||[]),{id:uid(),date:today,...act.data}]});
+      setSaved('บันทึกรายการเงินแล้ว');
+    } else if(act.action==='add_visit'){
+      onUpdate({...p,visits:[...(p.visits||[]),{id:uid(),date:new Date().toISOString(),...act.data}]});
+      setSaved('บันทึก Check-in แล้ว');
+    }
+    setPendAct(null);setTimeout(()=>setSaved(''),3000);
+  };
+
+  const attachImg=async e=>{const file=e.target.files[0];if(!file)return;setImgData(await resizeImg(file,1200));e.target.value=''};
 
   const send=async()=>{
-    if(!inp.trim()||loading)return;
-    const msg=inp.trim();setInp('');setLoading(true);
-    const nm=[...msgs,{role:'user',content:msg}];setMsgs(nm);
+    if((!inp.trim()&&!imgData)||loading)return;
+    const msg=inp.trim()||(imgData?'วิเคราะห์รูปนี้ ช่วยบันทึกข้อมูลเข้าระบบด้วย':'');
+    const newMsgs=[...msgs,{role:'user',content:msg,img:imgData}];
+    setMsgs(newMsgs);setInp('');setImgData(null);setLoading(true);
+    const apiMsgs=newMsgs.map(m=>({role:m.role,content:m.img?[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:m.img.replace(/^data:image\/\w+;base64,/,'')}},{type:'text',text:m.content}]:m.content}));
     try{
-      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`คุณคือผู้ช่วย AI สำหรับงาน IT/UPS Service ตอบภาษาไทย สั้นกระชับ\nProject Context:\n${ctx}`,messages:nm})});
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,system:SYS,messages:apiMsgs})});
       const data=await res.json();
-      if(data.error)setMsgs([...nm,{role:'assistant',content:'Error: '+data.error.message}]);
-      else setMsgs([...nm,{role:'assistant',content:data.content?.[0]?.text||'ไม่สามารถตอบได้'}]);
-    }catch(e){setMsgs([...nm,{role:'assistant',content:'เกิดข้อผิดพลาด: '+e.message}])}
+      if(data.error){setMsgs([...newMsgs,{role:'assistant',content:'Error: '+data.error.message}]);setLoading(false);return}
+      const reply=data.content?.[0]?.text||'ไม่สามารถตอบได้';
+      const act=parseAct(reply);if(act)setPendAct(act);
+      const clean=reply.replace(/```json[\s\S]*?```/g,'').trim();
+      setMsgs([...newMsgs,{role:'assistant',content:clean}]);
+    }catch(e){setMsgs([...newMsgs,{role:'assistant',content:'เกิดข้อผิดพลาด: '+e.message}])}
     setLoading(false);setTimeout(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),100);
   };
 
+  const examples=['"เพิ่ม APC SUA1000 S/N AS123456"','"เปลี่ยนแบต RBC17 วันนี้"','"ค่าซ่อมวันนี้ 2500 บาท"'];
+
   return h('div',{},
     showKey&&h('div',{style:{...s.card(),marginBottom:12,borderColor:'#f59e0b'}},
-      h('p',{style:{margin:'0 0 8px',fontWeight:500,fontSize:14}},'ใส่ Anthropic API Key'),
-      h('p',{style:{margin:'0 0 10px',fontSize:12,color:C.muted()}},'ได้จาก console.anthropic.com — เก็บไว้ใน browser นี้เท่านั้น'),
+      h('p',{style:{margin:'0 0 4px',fontWeight:500,fontSize:14}},'ใส่ Anthropic API Key'),
+      h('p',{style:{margin:'0 0 10px',fontSize:12,color:C.muted()}},'ได้จาก console.anthropic.com — เก็บไว้ใน browser เท่านั้น'),
       h(Row,{},h('input',{value:apiKey,onChange:e=>setApiKey(e.target.value),placeholder:'sk-ant-...',type:'password',style:{flex:1}}),h(BtnP,{onClick:()=>{localStorage.setItem('ai_api_key',apiKey);setShowKey(false)}},'บันทึก'))
     ),
-    h('div',{style:{minHeight:280,maxHeight:380,overflowY:'auto',display:'flex',flexDirection:'column',gap:8,marginBottom:12,padding:'4px 0'}},
-      msgs.length===0&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,marginTop:40}},'ถามน้อง AI เรื่องเทคนิคหรือข้อมูล Project ได้เลยครับ'),
-      msgs.map((m,i)=>h('div',{key:i,style:{alignSelf:m.role==='user'?'flex-end':'flex-start',maxWidth:'86%',background:m.role==='user'?'#378add':isDark()?'#3a3a38':'#f0f0ee',color:m.role==='user'?'#ffffff':isDark()?'#e8e6e0':'#1a1a18',padding:'8px 12px',borderRadius:10,fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'}},m.content)),
+    h('div',{style:{minHeight:240,maxHeight:360,overflowY:'auto',display:'flex',flexDirection:'column',gap:8,marginBottom:10,padding:'4px 0'}},
+      msgs.length===0&&h('div',{style:{padding:'24px 0'}},
+        h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,margin:'0 0 10px'}},'พิมพ์หรือส่งรูป ให้น้อง AI ช่วยบันทึกข้อมูลเข้าระบบ'),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}},
+          examples.map(ex=>h('button',{key:ex,onClick:()=>setInp(ex.replace(/"/g,'')),style:{background:C.bg2(),border:`0.5px solid ${C.border()}`,borderRadius:14,padding:'4px 10px',fontSize:11,cursor:'pointer',color:C.text()}},ex))
+        )
+      ),
+      msgs.map((m,i)=>h('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start',gap:4}},
+        m.img&&h('img',{src:m.img,style:{maxWidth:160,borderRadius:8,objectFit:'cover'}}),
+        h('div',{style:{maxWidth:'86%',background:m.role==='user'?'#378add':isDark()?'#3a3a38':'#f0f0ee',color:m.role==='user'?'#fff':isDark()?'#e8e6e0':'#1a1a18',padding:'8px 12px',borderRadius:10,fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'}},m.content)
+      )),
       loading&&h('div',{style:{alignSelf:'flex-start',color:C.muted(),fontSize:13}},'กำลังคิด...'),
       h('div',{ref:endRef})
     ),
+    pendAct&&h('div',{style:{background:isDark()?'#1a2a1a':'#f0fdf4',border:`1.5px solid ${ACT_COLOR[pendAct.action]||'#22c55e'}`,borderRadius:10,padding:'10px 12px',marginBottom:10}},
+      h('p',{style:{margin:'0 0 6px',fontWeight:500,fontSize:13,color:ACT_COLOR[pendAct.action]||'#16a34a'}},'น้อง AI ต้องการ: '+(ACT_LABEL[pendAct.action]||pendAct.action)),
+      h('div',{style:{background:isDark()?'#0f1f0f':'#dcfce7',borderRadius:6,padding:'6px 8px',marginBottom:8,fontSize:11,fontFamily:'monospace',color:isDark()?'#86efac':'#166534',whiteSpace:'pre-wrap'}},JSON.stringify(pendAct.data,null,2)),
+      h(Row,{},h(Btn,{onClick:()=>setPendAct(null),style:{fontSize:12}},'ยกเลิก'),h('button',{onClick:()=>execAct(pendAct),style:{background:ACT_COLOR[pendAct.action]||'#22c55e',color:'#fff',border:'none',borderRadius:8,padding:'7px 16px',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}},'บันทึกเข้าระบบ ✓'))
+    ),
+    saved&&h('p',{style:{fontSize:13,color:'#16a34a',margin:'0 0 8px',fontWeight:500}},'✓ '+saved),
+    imgData&&h(Row,{style:{marginBottom:8,background:C.bg2(),borderRadius:8,padding:'6px 10px'}},
+      h('img',{src:imgData,style:{height:44,borderRadius:4,objectFit:'cover',flexShrink:0}}),
+      h('span',{style:{fontSize:12,color:C.muted(),flex:1,marginLeft:8}},'รูปพร้อมส่ง'),
+      h('button',{onClick:()=>setImgData(null),style:{background:'none',border:'none',cursor:'pointer',color:C.muted(),fontSize:18,lineHeight:1}},'×')
+    ),
     h(Row,{},
-      h('input',{style:{flex:1,...s.input},value:inp,onChange:e=>setInp(e.target.value),onKeyDown:e=>e.key==='Enter'&&!e.shiftKey&&send(),placeholder:'ถามเรื่องเทคนิค หรือข้อมูล Project...'}),
-      !apiKey&&h(Btn,{onClick:()=>setShowKey(true),style:{fontSize:12}},'ใส่ API Key'),
-      apiKey&&h(BtnP,{onClick:send,disabled:loading},'ส่ง')
+      h('input',{ref:imgRef,type:'file',accept:'image/*',capture:'environment',style:{display:'none'},onChange:attachImg}),
+      h('button',{onClick:()=>imgRef.current?.click(),title:'แนบรูป',style:{background:C.bg2(),border:`0.5px solid ${C.border()}`,borderRadius:8,padding:'7px 10px',cursor:'pointer',fontSize:18,flexShrink:0,lineHeight:1}},'📷'),
+      h('input',{style:{flex:1,border:`0.5px solid ${C.border()}`,borderRadius:8,padding:'8px 10px',fontSize:13,background:C.bg(),color:C.text(),margin:'0 8px'},value:inp,onChange:e=>setInp(e.target.value),onKeyDown:e=>e.key==='Enter'&&!e.shiftKey&&send(),placeholder:'พิมพ์หรือแนบรูปให้น้องช่วยบันทึก...'}),
+      !apiKey?h(Btn,{onClick:()=>setShowKey(true),style:{fontSize:12,flexShrink:0}},'ใส่ Key'):h(BtnP,{onClick:send,disabled:loading,style:{flexShrink:0}},'ส่ง')
     )
   )
 }
@@ -513,7 +607,7 @@ function ProjectDetail({p,onBack,onUpdate}){
       exp==='email'&&h(EmailInline,{p,onClose:()=>setExp(null)})
     ),
     h('div',{style:{display:'flex',gap:2,borderBottom:`0.5px solid ${C.border()}`,marginBottom:14,overflowX:'auto',WebkitOverflowScrolling:'touch'}},tabs.map(t=>h('button',{key:t.id,className:'tab-btn',onClick:()=>setTab(t.id),style:{background:'none',border:'none',cursor:'pointer',padding:'7px 10px',fontSize:13,whiteSpace:'nowrap',color:tab===t.id?C.text():C.muted(),borderBottom:tab===t.id?`2px solid ${C.text()}`:'2px solid transparent',fontWeight:tab===t.id?500:400}},t.lb))),
-    tab==='info'&&h(InfoTab,{p,onUpdate}),tab==='devices'&&h(DevicesTab,{p,onUpdate}),tab==='attachments'&&h(AttachmentsTab,{p,onUpdate}),tab==='finance'&&h(FinanceTab,{p,onUpdate}),tab==='ai'&&h(AITab,{p})
+    tab==='info'&&h(InfoTab,{p,onUpdate}),tab==='devices'&&h(DevicesTab,{p,onUpdate}),tab==='attachments'&&h(AttachmentsTab,{p,onUpdate}),tab==='finance'&&h(FinanceTab,{p,onUpdate}),tab==='ai'&&h(AITab,{p,onUpdate})
   )
 }
 
