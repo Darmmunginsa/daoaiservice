@@ -7,12 +7,31 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9f9f7;color:#1a1a18;min-height:100vh}
-#root{max-width:720px;margin:0 auto;padding:1rem 1rem 4rem}
+#root{max-width:720px;margin:0 auto;padding:1rem 1rem 5rem}
 input,select,textarea{background:#fff;color:#1a1a18;border:0.5px solid #ccc;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;font-family:inherit;outline:none}
 input:focus,select:focus,textarea:focus{border-color:#378add}
 textarea{resize:vertical;min-height:70px}
 button{font-family:inherit;cursor:pointer}
 img{display:block;max-width:100%}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.gimg{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px}
+.nav-wrap{border-bottom:0.5px solid;margin-bottom:16px;display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+@media(max-width:560px){
+  #root{padding:0.75rem 0.75rem 5rem}
+  .g2{grid-template-columns:1fr}
+  .g3{grid-template-columns:1fr 1fr}
+  .g4{grid-template-columns:1fr 1fr}
+  .gimg{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
+  .brand{display:none}
+  .sync-label{display:none}
+  .tab-btn{padding:7px 8px!important;font-size:12px!important}
+  .nav-tabs{gap:0!important}
+}
+@media(max-width:380px){
+  .g3{grid-template-columns:1fr}
+}
 @media(prefers-color-scheme:dark){
   body{background:#1a1a18;color:#e8e6e0}
   input,select,textarea{background:#2c2c2a;color:#e8e6e0;border-color:#444}
@@ -33,6 +52,8 @@ const fmtDate=s=>{if(!s)return'-';try{return new Date(s).toLocaleDateString('th-
 const daysLeft=e=>{if(!e)return null;return Math.ceil((new Date(e)-Date.now())/86400000)};
 const wTag=e=>{const d=daysLeft(e);if(d===null)return{t:'ไม่ระบุ',bg:'#f3f4f6',c:'#6b7280'};if(d<0)return{t:'หมดอายุ',bg:'#fee2e2',c:'#dc2626'};if(d<=60)return{t:`เหลือ ${d} วัน`,bg:'#fef9c3',c:'#ca8a04'};return{t:`เหลือ ${d} วัน`,bg:'#dcfce7',c:'#16a34a'}};
 const fmt$=n=>Math.round(Number(n||0)).toLocaleString('th-TH');
+const fmtDT=s=>{if(!s)return'-';const d=new Date(s);return d.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'})+' · '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})};
+const timeAgo=s=>{if(!s)return'';const d=Math.floor((Date.now()-new Date(s))/86400000);if(d===0)return'วันนี้';if(d===1)return'เมื่อวาน';if(d<30)return d+' วันที่แล้ว';if(d<365)return Math.floor(d/30)+' เดือนที่แล้ว';return Math.floor(d/365)+' ปีที่แล้ว'};
 const isDark=()=>window.matchMedia('(prefers-color-scheme:dark)').matches;
 
 // Color helpers (dark-mode aware)
@@ -199,7 +220,7 @@ function DashboardView({projects,onSelect}){
       h('p',{style:{margin:'0 0 8px',fontSize:13,fontWeight:500,color:C.muted()}},`การแจ้งเตือน (${alerts.length})`),
       alerts.slice(0,5).map((a,i)=>{const isExp=a.days<=0,isSoon=a.days<=30;const bg=isExp?'#fee2e2':isSoon?'#fef9c3':'#f3f4f6';const c=isExp?'#dc2626':isSoon?'#ca8a04':'#6b7280';return h('div',{key:i,style:{background:bg,borderRadius:8,padding:'8px 12px',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:10},onClick:()=>onSelect(a.projectId)},h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:13,fontWeight:500,color:c}},a.label),h('p',{style:{margin:0,fontSize:12,color:c}},a.days<=0?`หมดอายุแล้ว ${Math.abs(a.days)} วัน`:`เหลือ ${a.days} วัน — ${fmtDate(a.endDate)}`)),h('span',{style:{fontSize:12,color:c}},'→'))})
     ),
-    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}},
+    h('div',{className:'g4'},
       [['Projects',total,'#6b7280'],['ใกล้หมด',expiring,expiring>0?'#ca8a04':'#6b7280'],['รายรับรวม',`${fmt$(totInc)} ฿`,'#16a34a'],['กำไรรวม',`${fmt$(profit)} ฿`,profit>=0?'#16a34a':'#dc2626']].map(([lb,val,c])=>h('div',{key:lb,style:{background:C.bg2(),borderRadius:8,padding:'12px 8px',textAlign:'center'}},h('p',{style:{margin:0,fontSize:12,color:C.muted()}},lb),h('p',{style:{margin:'4px 0 0',fontSize:16,fontWeight:500,color:c}},String(val))))
     ),
     projects.some(p=>(p.finances||[]).length>0)&&h('div',{style:s.card()},h('p',{style:{margin:'0 0 12px',fontWeight:500,fontSize:15}},'รายรับ - รายจ่าย ต่อ Project'),h(FinanceChart,{projects})),
@@ -216,82 +237,180 @@ function InfoTab({p,onUpdate}){
   const[f,setF]=useState({...p});
   const[pinning,setPinning]=useState(false);
   const[pinMsg,setPinMsg]=useState('');
+  const[checkin,setCheckin]=useState(false);
+  const[ciNote,setCiNote]=useState('');
   const flds=[['ชื่อ Project','name','text'],['ลูกค้า','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']];
 
   const pinNow=()=>{
     setPinning(true);setPinMsg('กำลังหาตำแหน่ง GPS...');
     if(!navigator.geolocation){setPinMsg('Browser ไม่รองรับ GPS');setPinning(false);return}
     navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const lat=pos.coords.latitude,lng=pos.coords.longitude;
-        onUpdate({...p,lat,lng});
-        setPinMsg('ปักหมุดแล้ว: '+lat.toFixed(5)+', '+lng.toFixed(5));
-        setPinning(false);
-      },
+      pos=>{const lat=pos.coords.latitude,lng=pos.coords.longitude;onUpdate({...p,lat,lng});setPinMsg('ปักหมุดแล้ว: '+lat.toFixed(5)+', '+lng.toFixed(5));setPinning(false)},
       err=>{setPinMsg('หาตำแหน่งไม่ได้: '+err.message);setPinning(false)},
       {enableHighAccuracy:true,timeout:12000}
     );
   };
 
+  const saveCheckin=()=>{
+    const v={id:uid(),date:new Date().toISOString(),note:ciNote.trim()};
+    onUpdate({...p,visits:[...(p.visits||[]),v]});
+    setCheckin(false);setCiNote('');
+  };
+
   const hasLoc=p.lat&&p.lng;
+  const visits=p.visits||[];
+  const last=visits.length>0?visits[visits.length-1]:null;
 
   const locSection=h('div',{style:{marginTop:16,borderTop:`0.5px solid ${C.border()}`,paddingTop:14}},
     h('p',{style:{margin:'0 0 10px',fontWeight:500,fontSize:14}},'ตำแหน่งที่ตั้ง'),
     hasLoc&&h('div',{},
       h('div',{style:{borderRadius:8,overflow:'hidden',marginBottom:10,border:`0.5px solid ${C.border()}`}},
-        h('iframe',{
-          src:`https://www.openstreetmap.org/export/embed.html?bbox=${p.lng-0.007},${p.lat-0.007},${p.lng+0.007},${p.lat+0.007}&layer=mapnik&marker=${p.lat},${p.lng}`,
-          style:{width:'100%',height:220,border:'none',display:'block'},
-          loading:'lazy'
-        })
+        h('iframe',{src:`https://www.openstreetmap.org/export/embed.html?bbox=${p.lng-0.007},${p.lat-0.007},${p.lng+0.007},${p.lat+0.007}&layer=mapnik&marker=${p.lat},${p.lng}`,style:{width:'100%',height:200,border:'none',display:'block'},loading:'lazy'})
       ),
       h(Row,{style:{flexWrap:'wrap',gap:8}},
         h('span',{style:{fontSize:11,color:C.muted(),flex:1}},p.lat.toFixed(5)+', '+p.lng.toFixed(5)),
-        h('a',{
-          href:`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`,
-          target:'_blank',rel:'noopener',
-          style:{background:'#16a34a',color:'#fff',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:500,textDecoration:'none',display:'inline-block'}
-        },'นำทาง Google Maps'),
+        h('a',{href:`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`,target:'_blank',rel:'noopener',style:{background:'#16a34a',color:'#fff',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:500,textDecoration:'none',display:'inline-block'}},'นำทาง Google Maps'),
         h(Btn,{onClick:()=>onUpdate({...p,lat:null,lng:null}),style:{fontSize:12,color:'#dc2626',padding:'6px 10px'}},'ลบหมุด')
       )
     ),
-    !hasLoc&&h('p',{style:{fontSize:13,color:C.muted(),margin:'0 0 10px'}},'ยังไม่ได้ปักหมุดตำแหน่ง — กดปุ่มด้านล่างตอนที่อยู่ที่ไซต์งาน'),
-    h(Row,{style:{marginTop:8}},
-      h(Btn,{onClick:pinNow,disabled:pinning,style:{fontSize:13}},
-        pinning?'กำลังหาตำแหน่ง...':(hasLoc?'อัปเดตหมุด ณ ตำแหน่งนี้':'📍 ปักหมุด ณ ตำแหน่งนี้'))
+    !hasLoc&&h('p',{style:{fontSize:13,color:C.muted(),margin:'0 0 10px'}},'ยังไม่ได้ปักหมุดตำแหน่ง'),
+    h(Row,{style:{marginTop:8}},h(Btn,{onClick:pinNow,disabled:pinning,style:{fontSize:13}},pinning?'กำลังหาตำแหน่ง...':(hasLoc?'อัปเดตหมุด ณ ตำแหน่งนี้':'📍 ปักหมุด ณ ตำแหน่งนี้'))),
+    pinMsg&&h('p',{style:{margin:'6px 0 0',fontSize:12,color:pinMsg.includes('แล้ว')?'#16a34a':'#dc2626'}},pinMsg)
+  );
+
+  const visitSection=h('div',{style:{marginTop:16,borderTop:`0.5px solid ${C.border()}`,paddingTop:14}},
+    h(Row,{style:{marginBottom:10}},
+      h('p',{style:{margin:0,fontWeight:500,fontSize:14,flex:1}},'ประวัติการเข้าพื้นที่'),
+      visits.length>0&&h('span',{style:{fontSize:12,color:C.muted()}},visits.length+' ครั้ง')
     ),
-    pinMsg&&h('p',{style:{margin:'8px 0 0',fontSize:12,color:pinMsg.includes('แล้ว')?'#16a34a':'#dc2626'}},pinMsg)
+    last&&h('div',{style:{display:'flex',background:C.bg2(),borderRadius:8,marginBottom:12,overflow:'hidden'}},
+      h('div',{style:{flex:1,padding:'10px 14px',borderRight:`0.5px solid ${C.border()}`}},
+        h('p',{style:{margin:0,fontSize:11,color:C.muted()}},'ไปล่าสุด'),
+        h('p',{style:{margin:'3px 0 0',fontSize:14,fontWeight:500}},timeAgo(last.date)),
+        h('p',{style:{margin:'2px 0 0',fontSize:11,color:C.muted()}},fmtDT(last.date))
+      ),
+      h('div',{style:{padding:'10px 16px',textAlign:'center'}},
+        h('p',{style:{margin:0,fontSize:11,color:C.muted()}},'รวม'),
+        h('p',{style:{margin:'2px 0 0',fontSize:24,fontWeight:500,color:'#378add'}},visits.length),
+        h('p',{style:{margin:0,fontSize:11,color:C.muted()}},'ครั้ง')
+      )
+    ),
+    checkin
+      ?h('div',{style:{background:C.bg2(),borderRadius:8,padding:'12px',marginBottom:12}},
+          h(Fld,{label:'บันทึกสั้นๆ (ไม่จำเป็น)'},
+            h('input',{value:ciNote,onChange:e=>setCiNote(e.target.value),placeholder:'เช่น: เปลี่ยนแบต, PM ประจำปี, แก้ปัญหา Alarm...',autoFocus:true,onKeyDown:e=>e.key==='Enter'&&saveCheckin()})
+          ),
+          h(Row,{style:{justifyContent:'flex-end',marginTop:8}},
+            h(Btn,{onClick:()=>{setCheckin(false);setCiNote('')}},'ยกเลิก'),
+            h(BtnP,{onClick:saveCheckin},'บันทึก Check-in')
+          )
+        )
+      :h(Btn,{onClick:()=>setCheckin(true),style:{fontSize:13,marginBottom:visits.length>0?12:0}},'✓ Check-in ตอนนี้'),
+    visits.length===0&&!checkin&&h('p',{style:{fontSize:13,color:C.muted(),margin:'8px 0 0'}},'ยังไม่มีประวัติ — กด Check-in ทุกครั้งที่ไปหน้างาน'),
+    h('div',{},
+      [...visits].reverse().map((v,i)=>h('div',{key:v.id,style:{display:'flex',alignItems:'flex-start',gap:10,padding:'9px 0',borderTop:`0.5px solid ${C.border()}`}},
+        h('div',{style:{paddingTop:4,flexShrink:0}},
+          h('div',{style:{width:9,height:9,borderRadius:'50%',background:'#378add'}})
+        ),
+        h('div',{style:{flex:1,minWidth:0}},
+          h('p',{style:{margin:0,fontSize:13,fontWeight:500}},fmtDT(v.date)),
+          v.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),wordBreak:'break-word'}},v.note)
+        ),
+        h(Btn,{onClick:()=>onUpdate({...p,visits:visits.filter(x=>x.id!==v.id)}),style:{fontSize:11,padding:'2px 7px',color:'#dc2626',flexShrink:0}},'ลบ')
+      ))
+    )
   );
 
   return h('div',{style:s.card()},
     edit
       ?h('div',{},
-          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},flds.map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+          h('div',{className:'g2'},flds.map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
           h(Fld,{label:'หมายเหตุ'},h('textarea',{value:f.notes||'',onChange:e=>setF({...f,notes:e.target.value})})),
-          h(Row,{style:{justifyContent:'flex-end',marginTop:12}},h(Btn,{onClick:()=>setEdit(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{onUpdate({...f,lat:p.lat,lng:p.lng});setEdit(false)}},'บันทึก'))
+          h(Row,{style:{justifyContent:'flex-end',marginTop:12}},h(Btn,{onClick:()=>setEdit(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{onUpdate({...f,lat:p.lat,lng:p.lng,visits:p.visits});setEdit(false)}},'บันทึก'))
         )
       :h('div',{},
           flds.map(([lb,k])=>p[k]?h('div',{key:k,style:{display:'flex',gap:16,marginBottom:10,fontSize:14}},h('span',{style:{minWidth:110,fontSize:13,color:C.muted()}},lb),h('span',{},k.includes('contract')?fmtDate(p[k]):p[k])):null),
           p.notes&&h('div',{style:{marginTop:8,fontSize:13,color:C.muted(),background:C.bg2(),borderRadius:8,padding:'8px 10px'}},p.notes),
           h(Btn,{onClick:()=>{setF({...p});setEdit(true)},style:{marginTop:12}},'แก้ไขข้อมูล')
         ),
-    locSection
+    locSection,
+    visitSection
   )
 }
 
 function DevicesTab({p,onUpdate}){
-  const[add,setAdd]=useState(false);const[f,setF]=useState({name:'',model:'',serial:'',location:'',warrantyEnd:''});const devs=p.devices||[];
+  const[add,setAdd]=useState(false);
+  const[f,setF]=useState({name:'',model:'',serial:'',location:'',warrantyEnd:''});
+  const[addHist,setAddHist]=useState(null);
+  const[hf,setHf]=useState({type:'battery',date:new Date().toISOString().slice(0,10),note:''});
+  const devs=p.devices||[];
+
+  const HT=[['battery','เปลี่ยนแบตเตอรี่','#f59e0b'],['repair','ซ่อม / แก้ไข','#ef4444'],['pm','ตรวจสอบ PM','#22c55e'],['replace','เปลี่ยนอะไหล่','#8b5cf6'],['other','อื่นๆ','#6b7280']];
+  const htLabel=t=>HT.find(([v])=>v===t)?.[1]||t;
+  const htColor=t=>HT.find(([v])=>v===t)?.[2]||'#6b7280';
+
+  const saveHist=devId=>{
+    const entry={id:uid(),date:hf.date,type:hf.type,note:hf.note.trim()};
+    onUpdate({devices:devs.map(d=>d.id===devId?{...d,history:[...(d.history||[]),entry]}:d)});
+    setAddHist(null);setHf({type:'battery',date:new Date().toISOString().slice(0,10),note:''});
+  };
+
+  const delHist=(devId,hid)=>onUpdate({devices:devs.map(d=>d.id===devId?{...d,history:(d.history||[]).filter(h=>h.id!==hid)}:d)});
+
   return h('div',{},
     h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'อุปกรณ์ทั้งหมด'),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่มอุปกรณ์')),
     add&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},[['ชื่ออุปกรณ์ *','name','text'],['Model','model','text'],['Serial Number','serial','text'],['ตำแหน่งติดตั้ง','location','text'],['Warranty หมด','warrantyEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
-      h(Row,{style:{justifyContent:'flex-end',marginTop:10}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.name)return;onUpdate({devices:[...devs,{id:uid(),...f}]});setAdd(false);setF({name:'',model:'',serial:'',location:'',warrantyEnd:''})}},'บันทึก'))
+      h('div',{className:'g2'},[['ชื่ออุปกรณ์ *','name','text'],['Model','model','text'],['Serial Number','serial','text'],['ตำแหน่งติดตั้ง','location','text'],['Warranty หมด','warrantyEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+      h(Row,{style:{justifyContent:'flex-end',marginTop:10}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.name)return;onUpdate({devices:[...devs,{id:uid(),...f,history:[]}]});setAdd(false);setF({name:'',model:'',serial:'',location:'',warrantyEnd:''})}},'บันทึก'))
     ),
     devs.length===0&&!add&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีอุปกรณ์'),
-    devs.map(d=>{const t=wTag(d.warrantyEnd);return h('div',{key:d.id,style:s.card()},
-      h(Row,{},h('div',{style:{flex:1}},h('p',{style:{margin:0,fontWeight:500,fontSize:14}},d.name),h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted()}},[d.model,d.serial?`S/N: ${d.serial}`:'',d.location].filter(Boolean).join(' · '))),h(Tag,t),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({devices:devs.filter(x=>x.id!==d.id)})},'ลบ')),
-      d.warrantyEnd&&h('p',{style:{margin:'6px 0 0',fontSize:12,color:C.muted()}},`Warranty หมด: ${fmtDate(d.warrantyEnd)}`)
-    )})
+    devs.map(d=>{
+      const t=wTag(d.warrantyEnd);
+      const hist=d.history||[];
+      const lastBatt=[...hist].reverse().find(h=>h.type==='battery');
+      const lastRepair=[...hist].reverse().find(h=>h.type==='repair');
+      return h('div',{key:d.id,style:s.card()},
+        h(Row,{},
+          h('div',{style:{flex:1}},
+            h('p',{style:{margin:0,fontWeight:500,fontSize:14}},d.name),
+            h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted()}},[d.model,d.serial?`S/N: ${d.serial}`:'',d.location].filter(Boolean).join(' · '))
+          ),
+          h(Tag,t),
+          h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({devices:devs.filter(x=>x.id!==d.id)})},'ลบ')
+        ),
+        (d.warrantyEnd||lastBatt||lastRepair)&&h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px 20px',marginTop:6}},
+          d.warrantyEnd&&h('span',{style:{fontSize:12,color:C.muted()}},'Warranty: '+fmtDate(d.warrantyEnd)),
+          lastBatt&&h('span',{style:{fontSize:12,color:'#f59e0b'}},'แบตล่าสุด: '+fmtDate(lastBatt.date)),
+          lastRepair&&h('span',{style:{fontSize:12,color:'#ef4444'}},'ซ่อมล่าสุด: '+fmtDate(lastRepair.date))
+        ),
+        h('div',{style:{marginTop:12,borderTop:`0.5px solid ${C.border()}`,paddingTop:10}},
+          h(Row,{style:{marginBottom:hist.length>0||addHist===d.id?8:0}},
+            h('p',{style:{margin:0,fontSize:13,fontWeight:500,flex:1}},'ประวัติซ่อมบำรุง'+(hist.length>0?` (${hist.length})`:'') ),
+            addHist!==d.id&&h(Btn,{onClick:()=>{setAddHist(d.id);setHf({type:'battery',date:new Date().toISOString().slice(0,10),note:''})},style:{fontSize:12,padding:'4px 10px'}},'+ เพิ่มประวัติ')
+          ),
+          addHist===d.id&&h('div',{style:{background:C.bg2(),borderRadius:8,padding:'10px',marginBottom:10}},
+            h('div',{className:'g2'},
+              h(Fld,{label:'ประเภท'},h('select',{value:hf.type,onChange:e=>setHf({...hf,type:e.target.value})},HT.map(([v,lb])=>h('option',{key:v,value:v},lb)))),
+              h(Fld,{label:'วันที่'},h('input',{type:'date',value:hf.date,onChange:e=>setHf({...hf,date:e.target.value})}))
+            ),
+            h(Fld,{label:'รายละเอียด'},h('input',{value:hf.note,onChange:e=>setHf({...hf,note:e.target.value}),placeholder:'เช่น: เปลี่ยน RBC24, ซ่อม inverter board, อัปเดต firmware...',autoFocus:true,onKeyDown:e=>e.key==='Enter'&&saveHist(d.id)})),
+            h(Row,{style:{justifyContent:'flex-end',marginTop:8}},
+              h(Btn,{onClick:()=>setAddHist(null)},'ยกเลิก'),
+              h(BtnP,{onClick:()=>saveHist(d.id)},'บันทึก')
+            )
+          ),
+          hist.length===0&&addHist!==d.id&&h('p',{style:{fontSize:12,color:C.muted(),margin:0}},'ยังไม่มีประวัติ'),
+          [...hist].reverse().map((entry,i)=>h('div',{key:entry.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'7px 0',borderTop:i>0?`0.5px solid ${C.border()}`:'none'}},
+            h('span',{style:{background:htColor(entry.type),color:'#fff',borderRadius:4,padding:'2px 7px',fontSize:10,fontWeight:500,flexShrink:0,marginTop:1,whiteSpace:'nowrap'}},htLabel(entry.type)),
+            h('div',{style:{flex:1,minWidth:0}},
+              h('p',{style:{margin:0,fontSize:12,fontWeight:500}},fmtDate(entry.date)),
+              entry.note&&h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted(),wordBreak:'break-word'}},entry.note)
+            ),
+            h(Btn,{onClick:()=>delHist(d.id,entry.id),style:{fontSize:10,padding:'2px 7px',color:'#dc2626',flexShrink:0}},'ลบ')
+          ))
+        )
+      )
+    })
   )
 }
 
@@ -303,7 +422,7 @@ function AttachmentsTab({p,onUpdate}){
     big&&h('div',{style:{marginBottom:16,borderRadius:12,overflow:'hidden',cursor:'pointer',border:`0.5px solid ${C.border()}`},onClick:()=>setBig(null)},h('img',{src:big,style:{width:'100%'}}),h('p',{style:{textAlign:'center',fontSize:12,color:C.muted(),padding:'6px 0'}},'กดที่รูปเพื่อปิด')),
     h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'ไฟล์แนบ & บันทึก'),h(Btn,{onClick:()=>setNf({show:true,title:'',note:''})},'+ บันทึก'),h(BtnP,{onClick:()=>fileRef.current?.click()},uploading?'กำลังอัปโหลด...':'+ รูป/ไฟล์'),h('input',{ref:fileRef,type:'file',accept:'image/*,.pdf,.doc,.docx',multiple:true,style:{display:'none'},onChange:doUpload})),
     nf.show&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},h(Fld,{label:'หัวข้อ *'},h('input',{value:nf.title,onChange:e=>setNf({...nf,title:e.target.value}),placeholder:'เช่น: สภาพ UPS หน้างาน'})),h(Fld,{label:'รายละเอียด'},h('textarea',{value:nf.note,onChange:e=>setNf({...nf,note:e.target.value}),placeholder:'บันทึกสิ่งที่พบ...'})),h(Row,{style:{justifyContent:'flex-end',marginTop:8}},h(Btn,{onClick:()=>setNf({show:false,title:'',note:''})},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!nf.title)return;onUpdate({attachments:[...atts,{id:uid(),type:'note',title:nf.title,note:nf.note,date:new Date().toISOString()}]});setNf({show:false,title:'',note:''})}},'บันทึก'))),
-    imgs.length>0&&h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginBottom:12}},imgs.map(a=>h('div',{key:a.id,style:{borderRadius:8,overflow:'hidden',border:`0.5px solid ${C.border()}`,cursor:'pointer',position:'relative'},onClick:()=>setBig(a.data)},h('img',{src:a.data,alt:a.name,style:{width:'100%',height:110,objectFit:'cover'}}),h('p',{style:{margin:0,padding:'4px 6px',fontSize:11,color:C.muted(),background:C.bg2(),whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.name),h('button',{style:{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',padding:'2px 6px'},onClick:ev=>{ev.stopPropagation();onUpdate({attachments:atts.filter(x=>x.id!==a.id)})}},'ลบ')))),
+    imgs.length>0&&h('div',{className:'gimg'},imgs.map(a=>h('div',{key:a.id,style:{borderRadius:8,overflow:'hidden',border:`0.5px solid ${C.border()}`,cursor:'pointer',position:'relative'},onClick:()=>setBig(a.data)},h('img',{src:a.data,alt:a.name,style:{width:'100%',height:110,objectFit:'cover'}}),h('p',{style:{margin:0,padding:'4px 6px',fontSize:11,color:C.muted(),background:C.bg2(),whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.name),h('button',{style:{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',padding:'2px 6px'},onClick:ev=>{ev.stopPropagation();onUpdate({attachments:atts.filter(x=>x.id!==a.id)})}},'ลบ')))),
     others.map(a=>h('div',{key:a.id,style:s.card()},h(Row,{},h('span',{style:{fontSize:18}},'📋'),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:14,fontWeight:500}},a.title||a.name),a.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),whiteSpace:'pre-wrap'}},a.note),h('p',{style:{margin:'3px 0 0',fontSize:11,color:C.muted()}},fmtDate(a.date))),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({attachments:atts.filter(x=>x.id!==a.id)})},'ลบ')))),
     atts.length===0&&!nf.show&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีไฟล์แนบ')
   )
@@ -313,10 +432,10 @@ function FinanceTab({p,onUpdate}){
   const fins=p.finances||[];const[add,setAdd]=useState(false);const[f,setF]=useState({type:'income',description:'',amount:'',date:new Date().toISOString().slice(0,10)});
   const inc=fins.filter(x=>x.type==='income').reduce((a,x)=>a+Number(x.amount),0);const exp=fins.filter(x=>x.type==='expense').reduce((a,x)=>a+Number(x.amount),0);const prof=inc-exp;
   return h('div',{},
-    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}},[['รายรับ',inc,'#16a34a'],['รายจ่าย',exp,'#dc2626'],['กำไร',prof,prof>=0?'#16a34a':'#dc2626']].map(([lb,val,c])=>h('div',{key:lb,style:{background:C.bg2(),borderRadius:8,padding:'12px 8px',textAlign:'center'}},h('p',{style:{margin:0,fontSize:12,color:C.muted()}},lb),h('p',{style:{margin:'4px 0 0',fontSize:16,fontWeight:500,color:c}},`${fmt$(val)} ฿`)))),
+    h('div',{className:'g3'},[['รายรับ',inc,'#16a34a'],['รายจ่าย',exp,'#dc2626'],['กำไร',prof,prof>=0?'#16a34a':'#dc2626']].map(([lb,val,c])=>h('div',{key:lb,style:{background:C.bg2(),borderRadius:8,padding:'12px 8px',textAlign:'center'}},h('p',{style:{margin:0,fontSize:12,color:C.muted()}},lb),h('p',{style:{margin:'4px 0 0',fontSize:16,fontWeight:500,color:c}},`${fmt$(val)} ฿`)))),
     h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'รายการทั้งหมด'),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่มรายการ')),
     add&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},h(Fld,{label:'ประเภท'},h('select',{value:f.type,onChange:e=>setF({...f,type:e.target.value})},h('option',{value:'income'},'รายรับ'),h('option',{value:'expense'},'รายจ่าย'))),h(Fld,{label:'วันที่'},h('input',{type:'date',value:f.date,onChange:e=>setF({...f,date:e.target.value})})),h('div',{style:{gridColumn:'1/-1'}},h(Fld,{label:'รายละเอียด *'},h('input',{value:f.description,onChange:e=>setF({...f,description:e.target.value}),placeholder:'เช่น: ค่าซ่อม, ค่า spare part...'}))),h(Fld,{label:'จำนวนเงิน (฿) *'},h('input',{type:'number',value:f.amount,onChange:e=>setF({...f,amount:e.target.value}),placeholder:'0'}))),
+      h('div',{className:'g2'},h(Fld,{label:'ประเภท'},h('select',{value:f.type,onChange:e=>setF({...f,type:e.target.value})},h('option',{value:'income'},'รายรับ'),h('option',{value:'expense'},'รายจ่าย'))),h(Fld,{label:'วันที่'},h('input',{type:'date',value:f.date,onChange:e=>setF({...f,date:e.target.value})})),h('div',{style:{gridColumn:'1/-1'}},h(Fld,{label:'รายละเอียด *'},h('input',{value:f.description,onChange:e=>setF({...f,description:e.target.value}),placeholder:'เช่น: ค่าซ่อม, ค่า spare part...'}))),h(Fld,{label:'จำนวนเงิน (฿) *'},h('input',{type:'number',value:f.amount,onChange:e=>setF({...f,amount:e.target.value}),placeholder:'0'}))),
       h(Row,{style:{justifyContent:'flex-end',marginTop:10}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.description||!f.amount)return;onUpdate({finances:[...fins,{id:uid(),...f}]});setAdd(false);setF({type:'income',description:'',amount:'',date:new Date().toISOString().slice(0,10)})}},'บันทึก'))
     ),
     fins.length===0&&!add&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีรายการ'),
@@ -377,7 +496,7 @@ function ProjectDetail({p,onBack,onUpdate}){
       h(Row,{style:{gap:8,marginBottom:exp==='email'?12:0}},h(BtnP,{onClick:()=>exportPDF(p)},'📄 PDF / พิมพ์'),h(Btn,{onClick:()=>setExp(exp==='email'?'show':'email')},'✉️ ร่าง Email')),
       exp==='email'&&h(EmailInline,{p,onClose:()=>setExp(null)})
     ),
-    h('div',{style:{display:'flex',gap:2,borderBottom:`0.5px solid ${C.border()}`,marginBottom:14,overflowX:'auto'}},tabs.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),style:{background:'none',border:'none',cursor:'pointer',padding:'7px 10px',fontSize:13,whiteSpace:'nowrap',color:tab===t.id?C.text():C.muted(),borderBottom:tab===t.id?`2px solid ${C.text()}`:'2px solid transparent',fontWeight:tab===t.id?500:400}},t.lb))),
+    h('div',{style:{display:'flex',gap:2,borderBottom:`0.5px solid ${C.border()}`,marginBottom:14,overflowX:'auto',WebkitOverflowScrolling:'touch'}},tabs.map(t=>h('button',{key:t.id,className:'tab-btn',onClick:()=>setTab(t.id),style:{background:'none',border:'none',cursor:'pointer',padding:'7px 10px',fontSize:13,whiteSpace:'nowrap',color:tab===t.id?C.text():C.muted(),borderBottom:tab===t.id?`2px solid ${C.text()}`:'2px solid transparent',fontWeight:tab===t.id?500:400}},t.lb))),
     tab==='info'&&h(InfoTab,{p,onUpdate}),tab==='devices'&&h(DevicesTab,{p,onUpdate}),tab==='attachments'&&h(AttachmentsTab,{p,onUpdate}),tab==='finance'&&h(FinanceTab,{p,onUpdate}),tab==='ai'&&h(AITab,{p})
   )
 }
@@ -400,7 +519,7 @@ function ProjectList({projects,onSelect,onAdd}){
     h(Row,{style:{marginBottom:20}},h('div',{style:{flex:1}},h('h2',{style:{margin:0,fontSize:20,fontWeight:500}},'Projects'),h('p',{style:{margin:'2px 0 0',fontSize:13,color:C.muted()}},`${projects.length} โปรเจกต์`)),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่ม Project')),
     add&&h('div',{style:s.card({borderColor:'#378add'})},
       h('p',{style:{margin:'0 0 14px',fontWeight:500,fontSize:15}},'Project ใหม่'),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},[['ชื่อ Project *','name','text'],['ชื่อลูกค้า *','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+      h('div',{className:'g2'},[['ชื่อ Project *','name','text'],['ชื่อลูกค้า *','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
       h(Row,{style:{justifyContent:'flex-end',marginTop:14}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.name||!f.client)return alert('กรุณากรอกชื่อ Project และลูกค้า');onAdd(f);setAdd(false);setF({name:'',client:'',location:'',contractStart:'',contractEnd:''})}},'บันทึก'))
     ),
     projects.length===0&&!add&&h('div',{style:{textAlign:'center',padding:48,color:C.muted(),fontSize:14}},'ยังไม่มี Project — กด "+ เพิ่ม Project"'),
@@ -432,13 +551,15 @@ function App(){
 
   return h('div',{},
     h('div',{style:{borderBottom:`0.5px solid ${C.border()}`,marginBottom:16,display:'flex',gap:4,alignItems:'center'}},
-      h('span',{style:{fontSize:15,fontWeight:600,marginRight:8,padding:'0 4px 10px',color:'#378add'}},'ServiceAI'),
-      ['dashboard','projects'].map(v=>h('button',{key:v,onClick:()=>{setNav(v);setSelId(null);setShowSettings(false)},style:{background:'none',border:'none',cursor:'pointer',padding:'10px 14px',fontSize:13,fontWeight:nav===v&&!sel&&!showSettings?500:400,color:nav===v&&!sel&&!showSettings?C.text():C.muted(),borderBottom:nav===v&&!sel&&!showSettings?`2px solid ${C.text()}`:'2px solid transparent'}},v==='dashboard'?'Dashboard':'Projects')),
+      h('span',{className:'brand',style:{fontSize:15,fontWeight:600,marginRight:8,padding:'0 4px 10px',color:'#378add'}},'ServiceAI'),
+      h('div',{className:'nav-tabs',style:{display:'flex',gap:4}},
+        ['dashboard','projects'].map(v=>h('button',{key:v,className:'tab-btn',onClick:()=>{setNav(v);setSelId(null);setShowSettings(false)},style:{background:'none',border:'none',cursor:'pointer',padding:'10px 14px',fontSize:13,fontWeight:nav===v&&!sel&&!showSettings?500:400,color:nav===v&&!sel&&!showSettings?C.text():C.muted(),borderBottom:nav===v&&!sel&&!showSettings?`2px solid ${C.text()}`:'2px solid transparent'}},v==='dashboard'?'Dashboard':'Projects'))
+      ),
       alerts.length>0&&h('span',{style:{background:'#fee2e2',color:'#dc2626',borderRadius:10,padding:'1px 7px',fontSize:11,fontWeight:500,marginLeft:4}},String(alerts.length)),
       h('div',{style:{marginLeft:'auto',paddingBottom:10}},
         h('button',{onClick:()=>{setShowSettings(!showSettings);setSelId(null)},style:{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.muted(),background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:20,padding:'4px 10px',cursor:'pointer'}},
-          h('span',{style:{width:7,height:7,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block'}}),
-          h('span',{},scLabel[syncStatus]||'เชื่อมต่อ Sheets')
+          h('span',{style:{width:7,height:7,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block',flexShrink:0}}),
+          h('span',{className:'sync-label'},scLabel[syncStatus]||'เชื่อมต่อ Sheets')
         )
       )
     ),
