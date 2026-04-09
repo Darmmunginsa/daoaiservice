@@ -212,18 +212,70 @@ function DashboardView({projects,onSelect}){
 
 // --- PROJECT TABS ---
 function InfoTab({p,onUpdate}){
-  const[edit,setEdit]=useState(false);const[f,setF]=useState({...p});
+  const[edit,setEdit]=useState(false);
+  const[f,setF]=useState({...p});
+  const[pinning,setPinning]=useState(false);
+  const[pinMsg,setPinMsg]=useState('');
   const flds=[['ชื่อ Project','name','text'],['ลูกค้า','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']];
+
+  const pinNow=()=>{
+    setPinning(true);setPinMsg('กำลังหาตำแหน่ง GPS...');
+    if(!navigator.geolocation){setPinMsg('Browser ไม่รองรับ GPS');setPinning(false);return}
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const lat=pos.coords.latitude,lng=pos.coords.longitude;
+        onUpdate({...p,lat,lng});
+        setPinMsg('ปักหมุดแล้ว: '+lat.toFixed(5)+', '+lng.toFixed(5));
+        setPinning(false);
+      },
+      err=>{setPinMsg('หาตำแหน่งไม่ได้: '+err.message);setPinning(false)},
+      {enableHighAccuracy:true,timeout:12000}
+    );
+  };
+
+  const hasLoc=p.lat&&p.lng;
+
+  const locSection=h('div',{style:{marginTop:16,borderTop:`0.5px solid ${C.border()}`,paddingTop:14}},
+    h('p',{style:{margin:'0 0 10px',fontWeight:500,fontSize:14}},'ตำแหน่งที่ตั้ง'),
+    hasLoc&&h('div',{},
+      h('div',{style:{borderRadius:8,overflow:'hidden',marginBottom:10,border:`0.5px solid ${C.border()}`}},
+        h('iframe',{
+          src:`https://www.openstreetmap.org/export/embed.html?bbox=${p.lng-0.007},${p.lat-0.007},${p.lng+0.007},${p.lat+0.007}&layer=mapnik&marker=${p.lat},${p.lng}`,
+          style:{width:'100%',height:220,border:'none',display:'block'},
+          loading:'lazy'
+        })
+      ),
+      h(Row,{style:{flexWrap:'wrap',gap:8}},
+        h('span',{style:{fontSize:11,color:C.muted(),flex:1}},p.lat.toFixed(5)+', '+p.lng.toFixed(5)),
+        h('a',{
+          href:`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`,
+          target:'_blank',rel:'noopener',
+          style:{background:'#16a34a',color:'#fff',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:500,textDecoration:'none',display:'inline-block'}
+        },'นำทาง Google Maps'),
+        h(Btn,{onClick:()=>onUpdate({...p,lat:null,lng:null}),style:{fontSize:12,color:'#dc2626',padding:'6px 10px'}},'ลบหมุด')
+      )
+    ),
+    !hasLoc&&h('p',{style:{fontSize:13,color:C.muted(),margin:'0 0 10px'}},'ยังไม่ได้ปักหมุดตำแหน่ง — กดปุ่มด้านล่างตอนที่อยู่ที่ไซต์งาน'),
+    h(Row,{style:{marginTop:8}},
+      h(Btn,{onClick:pinNow,disabled:pinning,style:{fontSize:13}},
+        pinning?'กำลังหาตำแหน่ง...':(hasLoc?'อัปเดตหมุด ณ ตำแหน่งนี้':'📍 ปักหมุด ณ ตำแหน่งนี้'))
+    ),
+    pinMsg&&h('p',{style:{margin:'8px 0 0',fontSize:12,color:pinMsg.includes('แล้ว')?'#16a34a':'#dc2626'}},pinMsg)
+  );
+
   return h('div',{style:s.card()},
-    edit?h('div',{},
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},flds.map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
-      h(Fld,{label:'หมายเหตุ'},h('textarea',{value:f.notes||'',onChange:e=>setF({...f,notes:e.target.value})})),
-      h(Row,{style:{justifyContent:'flex-end',marginTop:12}},h(Btn,{onClick:()=>setEdit(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{onUpdate(f);setEdit(false)}},'บันทึก'))
-    ):h('div',{},
-      flds.map(([lb,k])=>p[k]?h('div',{key:k,style:{display:'flex',gap:16,marginBottom:10,fontSize:14}},h('span',{style:{minWidth:110,fontSize:13,color:C.muted()}},lb),h('span',{},k.includes('contract')?fmtDate(p[k]):p[k])):null),
-      p.notes&&h('div',{style:{marginTop:8,fontSize:13,color:C.muted(),background:C.bg2(),borderRadius:8,padding:'8px 10px'}},p.notes),
-      h(Btn,{onClick:()=>{setF({...p});setEdit(true)},style:{marginTop:12}},'แก้ไขข้อมูล')
-    )
+    edit
+      ?h('div',{},
+          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},flds.map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+          h(Fld,{label:'หมายเหตุ'},h('textarea',{value:f.notes||'',onChange:e=>setF({...f,notes:e.target.value})})),
+          h(Row,{style:{justifyContent:'flex-end',marginTop:12}},h(Btn,{onClick:()=>setEdit(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{onUpdate({...f,lat:p.lat,lng:p.lng});setEdit(false)}},'บันทึก'))
+        )
+      :h('div',{},
+          flds.map(([lb,k])=>p[k]?h('div',{key:k,style:{display:'flex',gap:16,marginBottom:10,fontSize:14}},h('span',{style:{minWidth:110,fontSize:13,color:C.muted()}},lb),h('span',{},k.includes('contract')?fmtDate(p[k]):p[k])):null),
+          p.notes&&h('div',{style:{marginTop:8,fontSize:13,color:C.muted(),background:C.bg2(),borderRadius:8,padding:'8px 10px'}},p.notes),
+          h(Btn,{onClick:()=>{setF({...p});setEdit(true)},style:{marginTop:12}},'แก้ไขข้อมูล')
+        ),
+    locSection
   )
 }
 
