@@ -140,6 +140,15 @@ const Btn=({onClick,children,style:sx={},disabled})=>h('button',{onClick,disable
 const BtnP=({onClick,children,disabled,style:sx={}})=>h('button',{onClick,disabled,style:{...s.btnP(),...sx}},children);
 const Row=({children,style:sx={}})=>h('div',{style:{display:'flex',gap:10,alignItems:'center',...sx}},children);
 const Fld=({label,children})=>h('div',{style:{marginBottom:10}},h('label',{style:{fontSize:12,color:C.muted(),display:'block',marginBottom:4}},label),children);
+function ConfirmBtn({onConfirm,label='ลบ',style:sx={},small}){
+  const[ask,setAsk]=useState(false);
+  const sz=small?{fontSize:10,padding:'2px 6px'}:{fontSize:12,padding:'3px 8px'};
+  if(ask)return h('span',{style:{display:'inline-flex',gap:4,alignItems:'center',flexShrink:0}},
+    h('button',{onClick:e=>{e.stopPropagation();onConfirm()},style:{...sz,background:'#dc2626',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontFamily:'inherit',fontWeight:500}},'ยืนยัน'),
+    h('button',{onClick:e=>{e.stopPropagation();setAsk(false)},style:{...sz,background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:6,cursor:'pointer',fontFamily:'inherit',color:C.muted()}},'ยกเลิก')
+  );
+  return h(Btn,{onClick:e=>{e.stopPropagation&&e.stopPropagation();setAsk(true)},style:{color:'#dc2626',...sz,...sx}},label);
+}
 
 // --- SETTINGS PANEL ---
 function SettingsPanel({syncStatus,onClose,onConnected}){
@@ -270,7 +279,7 @@ function InfoTab({p,onUpdate}){
       h(Row,{style:{flexWrap:'wrap',gap:8}},
         h('span',{style:{fontSize:11,color:C.muted(),flex:1}},p.lat.toFixed(5)+', '+p.lng.toFixed(5)),
         h('a',{href:`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`,target:'_blank',rel:'noopener',style:{background:'#16a34a',color:'#fff',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:500,textDecoration:'none',display:'inline-block'}},'นำทาง Google Maps'),
-        h(Btn,{onClick:()=>onUpdate({...p,lat:null,lng:null}),style:{fontSize:12,color:'#dc2626',padding:'6px 10px'}},'ลบหมุด')
+        h(ConfirmBtn,{onConfirm:()=>onUpdate({...p,lat:null,lng:null}),label:'ลบหมุด',style:{padding:'6px 10px'}})
       )
     ),
     !hasLoc&&h('p',{style:{fontSize:13,color:C.muted(),margin:'0 0 10px'}},'ยังไม่ได้ปักหมุดตำแหน่ง'),
@@ -316,7 +325,7 @@ function InfoTab({p,onUpdate}){
           h('p',{style:{margin:0,fontSize:13,fontWeight:500}},fmtDT(v.date)),
           v.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),wordBreak:'break-word'}},v.note)
         ),
-        h(Btn,{onClick:()=>onUpdate({...p,visits:visits.filter(x=>x.id!==v.id)}),style:{fontSize:11,padding:'2px 7px',color:'#dc2626',flexShrink:0}},'ลบ')
+        h(ConfirmBtn,{onConfirm:()=>onUpdate({...p,visits:visits.filter(x=>x.id!==v.id)}),small:true,style:{flexShrink:0}})
       ))
     )
   );
@@ -376,7 +385,7 @@ function DevicesTab({p,onUpdate}){
             h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted()}},[d.model,d.serial?`S/N: ${d.serial}`:'',d.location].filter(Boolean).join(' · '))
           ),
           h(Tag,t),
-          h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({devices:devs.filter(x=>x.id!==d.id)})},'ลบ')
+          h(ConfirmBtn,{onConfirm:()=>onUpdate({devices:devs.filter(x=>x.id!==d.id)}),label:'ลบ'})
         ),
         (d.warrantyEnd||lastBatt||lastRepair)&&h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px 20px',marginTop:6}},
           d.warrantyEnd&&h('span',{style:{fontSize:12,color:C.muted()}},'Warranty: '+fmtDate(d.warrantyEnd)),
@@ -406,7 +415,7 @@ function DevicesTab({p,onUpdate}){
               h('p',{style:{margin:0,fontSize:12,fontWeight:500}},fmtDate(entry.date)),
               entry.note&&h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted(),wordBreak:'break-word'}},entry.note)
             ),
-            h(Btn,{onClick:()=>delHist(d.id,entry.id),style:{fontSize:10,padding:'2px 7px',color:'#dc2626',flexShrink:0}},'ลบ')
+            h(ConfirmBtn,{onConfirm:()=>delHist(d.id,entry.id),small:true,style:{flexShrink:0}})
           ))
         )
       )
@@ -415,15 +424,22 @@ function DevicesTab({p,onUpdate}){
 }
 
 function AttachmentsTab({p,onUpdate}){
-  const atts=p.attachments||[];const fileRef=useRef();const[uploading,setUploading]=useState(false);const[big,setBig]=useState(null);const[nf,setNf]=useState({show:false,title:'',note:''});
+  const atts=p.attachments||[];const fileRef=useRef();const[uploading,setUploading]=useState(false);const[big,setBig]=useState(null);const[nf,setNf]=useState({show:false,title:'',note:''});const[pendDel,setPendDel]=useState(null);
   const doUpload=async e=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);const news=[];for(const file of files){if(file.type.startsWith('image/')){const data=await resizeImg(file);news.push({id:uid(),type:'image',name:file.name,data,date:new Date().toISOString()})}else news.push({id:uid(),type:'file',name:file.name,date:new Date().toISOString()})}onUpdate({attachments:[...atts,...news]});setUploading(false);e.target.value=''};
   const imgs=atts.filter(a=>a.type==='image'),others=atts.filter(a=>a.type!=='image');
   return h('div',{},
     big&&h('div',{style:{marginBottom:16,borderRadius:12,overflow:'hidden',cursor:'pointer',border:`0.5px solid ${C.border()}`},onClick:()=>setBig(null)},h('img',{src:big,style:{width:'100%'}}),h('p',{style:{textAlign:'center',fontSize:12,color:C.muted(),padding:'6px 0'}},'กดที่รูปเพื่อปิด')),
     h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'ไฟล์แนบ & บันทึก'),h(Btn,{onClick:()=>setNf({show:true,title:'',note:''})},'+ บันทึก'),h(BtnP,{onClick:()=>fileRef.current?.click()},uploading?'กำลังอัปโหลด...':'+ รูป/ไฟล์'),h('input',{ref:fileRef,type:'file',accept:'image/*,.pdf,.doc,.docx',multiple:true,style:{display:'none'},onChange:doUpload})),
     nf.show&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},h(Fld,{label:'หัวข้อ *'},h('input',{value:nf.title,onChange:e=>setNf({...nf,title:e.target.value}),placeholder:'เช่น: สภาพ UPS หน้างาน'})),h(Fld,{label:'รายละเอียด'},h('textarea',{value:nf.note,onChange:e=>setNf({...nf,note:e.target.value}),placeholder:'บันทึกสิ่งที่พบ...'})),h(Row,{style:{justifyContent:'flex-end',marginTop:8}},h(Btn,{onClick:()=>setNf({show:false,title:'',note:''})},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!nf.title)return;onUpdate({attachments:[...atts,{id:uid(),type:'note',title:nf.title,note:nf.note,date:new Date().toISOString()}]});setNf({show:false,title:'',note:''})}},'บันทึก'))),
-    imgs.length>0&&h('div',{className:'gimg'},imgs.map(a=>h('div',{key:a.id,style:{borderRadius:8,overflow:'hidden',border:`0.5px solid ${C.border()}`,cursor:'pointer',position:'relative'},onClick:()=>setBig(a.data)},h('img',{src:a.data,alt:a.name,style:{width:'100%',height:110,objectFit:'cover'}}),h('p',{style:{margin:0,padding:'4px 6px',fontSize:11,color:C.muted(),background:C.bg2(),whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.name),h('button',{style:{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',padding:'2px 6px'},onClick:ev=>{ev.stopPropagation();onUpdate({attachments:atts.filter(x=>x.id!==a.id)})}},'ลบ')))),
-    others.map(a=>h('div',{key:a.id,style:s.card()},h(Row,{},h('span',{style:{fontSize:18}},'📋'),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:14,fontWeight:500}},a.title||a.name),a.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),whiteSpace:'pre-wrap'}},a.note),h('p',{style:{margin:'3px 0 0',fontSize:11,color:C.muted()}},fmtDate(a.date))),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({attachments:atts.filter(x=>x.id!==a.id)})},'ลบ')))),
+    imgs.length>0&&h('div',{className:'gimg'},imgs.map(a=>h('div',{key:a.id,style:{borderRadius:8,overflow:'hidden',border:`0.5px solid ${C.border()}`,cursor:'pointer',position:'relative'},onClick:()=>setBig(a.data)},h('img',{src:a.data,alt:a.name,style:{width:'100%',height:110,objectFit:'cover'}}),h('p',{style:{margin:0,padding:'4px 6px',fontSize:11,color:C.muted(),background:C.bg2(),whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.name),
+      pendDel===a.id
+        ?h('div',{style:{position:'absolute',top:4,right:4,display:'flex',gap:3},onClick:e=>e.stopPropagation()},
+            h('button',{onClick:e=>{e.stopPropagation();onUpdate({attachments:atts.filter(x=>x.id!==a.id)});setPendDel(null)},style:{background:'#dc2626',border:'none',borderRadius:4,color:'#fff',fontSize:10,cursor:'pointer',padding:'2px 6px',fontWeight:500}},'ยืนยัน'),
+            h('button',{onClick:e=>{e.stopPropagation();setPendDel(null)},style:{background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:10,cursor:'pointer',padding:'2px 6px'}},'ยกเลิก')
+          )
+        :h('button',{style:{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',padding:'2px 6px'},onClick:e=>{e.stopPropagation();setPendDel(a.id)}},'ลบ')
+    ))),
+    others.map(a=>h('div',{key:a.id,style:s.card()},h(Row,{},h('span',{style:{fontSize:18}},'📋'),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:14,fontWeight:500}},a.title||a.name),a.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),whiteSpace:'pre-wrap'}},a.note),h('p',{style:{margin:'3px 0 0',fontSize:11,color:C.muted()}},fmtDate(a.date))),h(ConfirmBtn,{onConfirm:()=>onUpdate({attachments:atts.filter(x=>x.id!==a.id)}),label:'ลบ'})))),
     atts.length===0&&!nf.show&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีไฟล์แนบ')
   )
 }
@@ -440,7 +456,7 @@ function FinanceTab({p,onUpdate}){
     ),
     fins.length===0&&!add&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีรายการ'),
     [...fins].sort((a,b)=>b.date>a.date?1:-1).map(fi=>h('div',{key:fi.id,style:s.card()},
-      h(Row,{},h('span',{style:{background:fi.type==='income'?'#dcfce7':'#fee2e2',color:fi.type==='income'?'#16a34a':'#dc2626',borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:500}},fi.type==='income'?'รับ':'จ่าย'),h('p',{style:{margin:0,flex:1,fontSize:14}},fi.description),h('p',{style:{margin:0,fontWeight:500,fontSize:14}},`${fmt$(fi.amount)} ฿`),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({finances:fins.filter(x=>x.id!==fi.id)})},'ลบ')),
+      h(Row,{},h('span',{style:{background:fi.type==='income'?'#dcfce7':'#fee2e2',color:fi.type==='income'?'#16a34a':'#dc2626',borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:500}},fi.type==='income'?'รับ':'จ่าย'),h('p',{style:{margin:0,flex:1,fontSize:14}},fi.description),h('p',{style:{margin:0,fontWeight:500,fontSize:14}},`${fmt$(fi.amount)} ฿`),h(ConfirmBtn,{onConfirm:()=>onUpdate({finances:fins.filter(x=>x.id!==fi.id)}),label:'ลบ'})),
       h('p',{style:{margin:'4px 0 0',fontSize:11,color:C.muted()}},fmtDate(fi.date))
     ))
   )
