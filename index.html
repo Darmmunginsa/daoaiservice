@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServiceAI — Project Manager</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9f9f7;color:#1a1a18;min-height:100vh}
+#root{max-width:720px;margin:0 auto;padding:1rem 1rem 4rem}
+input,select,textarea{background:#fff;color:#1a1a18;border:0.5px solid #ccc;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#378add}
+textarea{resize:vertical;min-height:70px}
+button{font-family:inherit;cursor:pointer}
+img{display:block;max-width:100%}
+@media(prefers-color-scheme:dark){
+  body{background:#1a1a18;color:#e8e6e0}
+  input,select,textarea{background:#2c2c2a;color:#e8e6e0;border-color:#444}
+}
+</style>
+</head>
+<body>
+<div id="root"><div style="padding:48px;text-align:center;color:#888">กำลังโหลด...</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const {useState,useEffect,useRef}=React,h=React.createElement;
+const SK='serviceai_projects_v1',SK_URL='serviceai_sheets_url';
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+const fmtDate=s=>{if(!s)return'-';try{return new Date(s).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}catch{return s}};
+const daysLeft=e=>{if(!e)return null;return Math.ceil((new Date(e)-Date.now())/86400000)};
+const wTag=e=>{const d=daysLeft(e);if(d===null)return{t:'ไม่ระบุ',bg:'#f3f4f6',c:'#6b7280'};if(d<0)return{t:'หมดอายุ',bg:'#fee2e2',c:'#dc2626'};if(d<=60)return{t:`เหลือ ${d} วัน`,bg:'#fef9c3',c:'#ca8a04'};return{t:`เหลือ ${d} วัน`,bg:'#dcfce7',c:'#16a34a'}};
+const fmt$=n=>Math.round(Number(n||0)).toLocaleString('th-TH');
+const isDark=()=>window.matchMedia('(prefers-color-scheme:dark)').matches;
+
+// Color helpers (dark-mode aware)
+const C={
+  bg:()=>isDark()?'#2c2c2a':'#ffffff',
+  bg2:()=>isDark()?'#222220':'#f5f5f3',
+  border:()=>isDark()?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.12)',
+  text:()=>isDark()?'#e8e6e0':'#1a1a18',
+  muted:()=>isDark()?'#9ca3af':'#6b7280',
+};
+
+// --- STORAGE (localStorage) ---
+function loadLocal(){try{const d=localStorage.getItem(SK);return d?JSON.parse(d):[]}catch{return[]}}
+function saveLocal(d){try{localStorage.setItem(SK,JSON.stringify(d))}catch{}}
+function getSheetsUrl(){return localStorage.getItem(SK_URL)||null}
+function setSheetsUrl(url){if(url)localStorage.setItem(SK_URL,url);else localStorage.removeItem(SK_URL)}
+
+async function loadData(setSync){
+  setSync('loading');
+  const url=getSheetsUrl();
+  if(url){
+    try{
+      const res=await fetch(url);const data=await res.json();
+      if(Array.isArray(data)){saveLocal(data);setSync('ok');return data}
+    }catch(e){console.warn('Sheets load fail:',e);setSync('error')}
+  } else setSync('none');
+  return loadLocal();
+}
+
+async function saveData(projects,setSync){
+  saveLocal(projects);
+  const url=getSheetsUrl();
+  if(!url){setSync('none');return}
+  setSync('saving');
+  try{await fetch(url,{method:'POST',body:JSON.stringify({projects})});setSync('ok')}
+  catch(e){console.warn('Sheets save fail:',e);setSync('error')}
+}
+
+function getAlerts(ps){const a=[];ps.forEach(p=>{const cd=daysLeft(p.contractEnd);if(cd!==null&&cd<=60)a.push({projectId:p.id,label:`สัญญา: ${p.name}`,endDate:p.contractEnd,days:cd});(p.devices||[]).forEach(d=>{const wd=daysLeft(d.warrantyEnd);if(wd!==null&&wd<=60)a.push({projectId:p.id,label:`Warranty: ${d.name} (${p.name})`,endDate:d.warrantyEnd,days:wd})})});return a.sort((a,b)=>a.days-b.days)}
+
+function exportPDF(p){
+  const devs=p.devices||[],fins=p.finances||[];
+  const inc=fins.filter(f=>f.type==='income').reduce((a,f)=>a+Number(f.amount),0);
+  const exp=fins.filter(f=>f.type==='expense').reduce((a,f)=>a+Number(f.amount),0);
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${p.name}</title>
+  <style>body{font-family:sans-serif;padding:30px;max-width:800px;margin:0 auto}h1{font-size:20px}h2{font-size:14px;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:20px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f5f5f5;text-align:left;padding:6px 8px}td{padding:6px 8px;border-bottom:1px solid #eee}.meta{color:#666;font-size:13px;margin:4px 0}.btn{background:#222;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;margin-bottom:20px}@media print{.btn{display:none}}</style>
+  </head><body>
+  <button class="btn" onclick="window.print()">พิมพ์ / บันทึก PDF</button>
+  <h1>${p.name}</h1>
+  <p class="meta">ลูกค้า: <strong>${p.client}</strong>${p.location?' | '+p.location:''}</p>
+  <p class="meta">สัญญา: ${fmtDate(p.contractStart)} → ${fmtDate(p.contractEnd)} | วันที่: ${new Date().toLocaleDateString('th-TH')}</p>
+  ${p.notes?`<p style="background:#f9f9f9;border-left:3px solid #ddd;padding:8px 12px;font-size:13px">${p.notes}</p>`:''}
+  <h2>อุปกรณ์ (${devs.length})</h2>
+  <table><tr><th>ชื่ออุปกรณ์</th><th>Model</th><th>S/N</th><th>ตำแหน่ง</th><th>Warranty หมด</th></tr>
+  ${devs.map(d=>`<tr><td>${d.name}</td><td>${d.model||'-'}</td><td>${d.serial||'-'}</td><td>${d.location||'-'}</td><td>${fmtDate(d.warrantyEnd)}</td></tr>`).join('')}
+  </table>
+  <h2>สรุปการเงิน</h2>
+  <table style="width:300px">
+  <tr><td>รายรับ</td><td style="text-align:right;color:#16a34a;font-weight:600">${fmt$(inc)} ฿</td></tr>
+  <tr><td>รายจ่าย</td><td style="text-align:right;color:#dc2626;font-weight:600">${fmt$(exp)} ฿</td></tr>
+  <tr style="border-top:2px solid #ddd"><td><strong>กำไร</strong></td><td style="text-align:right;font-weight:600;color:${inc-exp>=0?'#16a34a':'#dc2626'}">${fmt$(inc-exp)} ฿</td></tr>
+  </table>
+  <h2>รายการ (${fins.length})</h2>
+  <table><tr><th>วันที่</th><th>ประเภท</th><th>รายละเอียด</th><th>จำนวน (฿)</th></tr>
+  ${[...fins].sort((a,b)=>b.date>a.date?1:-1).map(f=>`<tr><td>${fmtDate(f.date)}</td><td>${f.type==='income'?'รายรับ':'รายจ่าย'}</td><td>${f.description}</td><td style="text-align:right">${fmt$(f.amount)}</td></tr>`).join('')}
+  </table>
+  ${(p.attachments||[]).filter(a=>a.type==='note').length?`<h2>บันทึก / Report</h2>${(p.attachments||[]).filter(a=>a.type==='note').map(a=>`<p style="font-weight:600;margin:12px 0 4px">${a.title}</p><p style="background:#f9f9f9;border-left:3px solid #ddd;padding:8px 12px;font-size:13px;white-space:pre-wrap">${a.note||''}</p>`).join('')}`:''}
+  </body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close()}
+}
+
+async function resizeImg(file,max=900){return new Promise(res=>{const r=new FileReader();r.onload=e=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');let w=img.width,hh=img.height;if(w>hh&&w>max){hh=hh*max/w;w=max}else if(hh>max){w=w*max/hh;hh=max}c.width=w;c.height=hh;c.getContext('2d').drawImage(img,0,0,w,hh);res(c.toDataURL('image/jpeg',.75))};img.src=e.target.result};r.readAsDataURL(file)})}
+
+// --- UI PRIMITIVES ---
+const s={
+  card:(extra={})=>({background:C.bg(),border:`0.5px solid ${C.border()}`,borderRadius:12,padding:'1rem 1.1rem',marginBottom:10,...extra}),
+  btn:(extra={})=>({background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:8,padding:'6px 12px',fontSize:13,color:C.text(),cursor:'pointer',...extra}),
+  btnP:(extra={})=>({background:'#378add',border:'none',borderRadius:8,padding:'7px 14px',fontSize:13,color:'#fff',fontWeight:500,cursor:'pointer',...extra}),
+  tag:(bg,c)=>({background:bg,color:c,borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:500,whiteSpace:'nowrap'}),
+  input:{background:C.bg(),color:C.text(),border:`0.5px solid ${C.border()}`,borderRadius:8,padding:'8px 10px',fontSize:13,width:'100%',fontFamily:'inherit'},
+};
+const Tag=({bg,c,t})=>h('span',{style:s.tag(bg,c)},t);
+const Btn=({onClick,children,style:sx={},disabled})=>h('button',{onClick,disabled,style:{...s.btn(),opacity:disabled?.5:1,...sx}},children);
+const BtnP=({onClick,children,disabled,style:sx={}})=>h('button',{onClick,disabled,style:{...s.btnP(),...sx}},children);
+const Row=({children,style:sx={}})=>h('div',{style:{display:'flex',gap:10,alignItems:'center',...sx}},children);
+const Fld=({label,children})=>h('div',{style:{marginBottom:10}},h('label',{style:{fontSize:12,color:C.muted(),display:'block',marginBottom:4}},label),children);
+
+// --- SETTINGS PANEL ---
+function SettingsPanel({syncStatus,onClose,onConnected}){
+  const[url,setUrl]=useState(getSheetsUrl()||'');
+  const[testing,setTesting]=useState(false);
+  const[msg,setMsg]=useState('');
+  const sc={ok:'#22c55e',saving:'#f59e0b',error:'#ef4444',loading:'#f59e0b',none:'#9ca3af'};
+
+  const test=async()=>{
+    if(!url.includes('script.google.com')){setMsg('URL ไม่ถูกต้อง');return}
+    setTesting(true);setMsg('');
+    try{
+      const res=await fetch(url);const data=await res.json();
+      if(Array.isArray(data)){
+        setSheetsUrl(url);
+        setMsg(`เชื่อมต่อสำเร็จ! พบข้อมูล ${data.length} Project`);
+        onConnected(data);
+      } else setMsg('เชื่อมต่อได้แต่ข้อมูลผิดรูปแบบ');
+    }catch(e){setMsg('เชื่อมต่อไม่ได้: '+e.message+'\nตรวจสอบว่า Deploy เป็น "Anyone"')}
+    setTesting(false);
+  };
+
+  return h('div',{style:s.card({borderColor:'#378add',marginBottom:16})},
+    h(Row,{style:{marginBottom:14}},
+      h('div',{style:{flex:1}},
+        h('p',{style:{margin:0,fontWeight:500,fontSize:15}},'ตั้งค่า Google Sheets'),
+        h(Row,{style:{marginTop:4,gap:6}},
+          h('span',{style:{width:8,height:8,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block'}}),
+          h('span',{style:{fontSize:12,color:C.muted()}},{ok:'ซิงก์แล้ว',saving:'กำลังซิงก์...',error:'ซิงก์ไม่สำเร็จ',loading:'กำลังโหลด...',none:'ยังไม่ได้เชื่อมต่อ'}[syncStatus]||'ยังไม่ได้เชื่อมต่อ')
+        )
+      ),
+      h(Btn,{onClick:onClose},'✕')
+    ),
+    h(Fld,{label:'Apps Script Web App URL'},
+      h('input',{value:url,onChange:e=>setUrl(e.target.value),placeholder:'https://script.google.com/macros/s/.../exec',style:{fontFamily:'monospace',fontSize:12}})
+    ),
+    h('div',{style:{background:C.bg2(),borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:C.muted(),lineHeight:1.7}},
+      h('p',{style:{margin:'0 0 2px',fontWeight:500,fontSize:13}},'วิธีรับ URL:'),
+      h('p',{style:{margin:0}},'Google Sheet → Extensions → Apps Script → Deploy → New deployment → Web app → Anyone → Deploy → คัดลอก URL')
+    ),
+    h(Row,{style:{justifyContent:'flex-end'}},
+      url&&h(Btn,{onClick:()=>{setSheetsUrl('');setUrl('');setMsg('ยกเลิกแล้ว');onConnected(null)},style:{color:'#dc2626',marginRight:4}},'ยกเลิกการเชื่อมต่อ'),
+      h(BtnP,{onClick:test,disabled:testing||!url},testing?'กำลังทดสอบ...':'ทดสอบและเชื่อมต่อ')
+    ),
+    msg&&h('p',{style:{margin:'10px 0 0',fontSize:13,whiteSpace:'pre-line',color:msg.includes('สำเร็จ')?'#16a34a':'#dc2626'}},msg)
+  )
+}
+
+// --- DASHBOARD ---
+function FinanceChart({projects}){
+  const canvasRef=useRef(),chartRef=useRef();
+  const key=projects.map(p=>p.id+(p.finances||[]).map(f=>f.amount).join()).join('|');
+  useEffect(()=>{
+    if(!canvasRef.current||projects.length===0)return;
+    if(chartRef.current){chartRef.current.destroy();chartRef.current=null}
+    const labels=projects.map(p=>p.name.length>13?p.name.slice(0,12)+'…':p.name);
+    const inc=projects.map(p=>Math.round((p.finances||[]).filter(f=>f.type==='income').reduce((a,f)=>a+Number(f.amount),0)));
+    const exp=projects.map(p=>Math.round((p.finances||[]).filter(f=>f.type==='expense').reduce((a,f)=>a+Number(f.amount),0)));
+    const dark=isDark();
+    chartRef.current=new Chart(canvasRef.current,{type:'bar',data:{labels,datasets:[{label:'รายรับ',data:inc,backgroundColor:'rgba(34,197,94,0.4)',borderColor:'#22c55e',borderWidth:1},{label:'รายจ่าย',data:exp,backgroundColor:'rgba(239,68,68,0.4)',borderColor:'#ef4444',borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:dark?'#ccc':'#444',font:{size:11},boxWidth:12}}},scales:{y:{beginAtZero:true,ticks:{color:dark?'#aaa':'#666',font:{size:11},callback:v=>fmt$(v)},grid:{color:dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)'}},x:{ticks:{color:dark?'#aaa':'#666',font:{size:11}},grid:{display:false}}}}});
+    return()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null}};
+  },[key]);
+  if(projects.length===0)return h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:24}},'ยังไม่มีข้อมูลการเงิน');
+  return h('div',{style:{height:220,position:'relative'}},h('canvas',{ref:canvasRef}));
+}
+
+function DashboardView({projects,onSelect}){
+  const alerts=getAlerts(projects);
+  const total=projects.length,expiring=projects.filter(p=>{const d=daysLeft(p.contractEnd);return d!==null&&d<=60}).length;
+  const totInc=projects.reduce((a,p)=>(p.finances||[]).filter(f=>f.type==='income').reduce((b,f)=>b+Number(f.amount),a),0);
+  const totExp=projects.reduce((a,p)=>(p.finances||[]).filter(f=>f.type==='expense').reduce((b,f)=>b+Number(f.amount),a),0);
+  const profit=totInc-totExp;
+  const expiryItems=[];
+  projects.forEach(p=>{const cd=daysLeft(p.contractEnd);if(cd!==null&&cd<=90)expiryItems.push({projectId:p.id,label:`สัญญา: ${p.name}`,sub:p.client,endDate:p.contractEnd,days:cd});(p.devices||[]).forEach(d=>{const wd=daysLeft(d.warrantyEnd);if(wd!==null&&wd<=90)expiryItems.push({projectId:p.id,label:`Warranty: ${d.name}`,sub:p.name,endDate:d.warrantyEnd,days:wd})})});
+  expiryItems.sort((a,b)=>a.days-b.days);
+  return h('div',{},
+    alerts.length>0&&h('div',{style:{marginBottom:16}},
+      h('p',{style:{margin:'0 0 8px',fontSize:13,fontWeight:500,color:C.muted()}},`การแจ้งเตือน (${alerts.length})`),
+      alerts.slice(0,5).map((a,i)=>{const isExp=a.days<=0,isSoon=a.days<=30;const bg=isExp?'#fee2e2':isSoon?'#fef9c3':'#f3f4f6';const c=isExp?'#dc2626':isSoon?'#ca8a04':'#6b7280';return h('div',{key:i,style:{background:bg,borderRadius:8,padding:'8px 12px',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:10},onClick:()=>onSelect(a.projectId)},h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:13,fontWeight:500,color:c}},a.label),h('p',{style:{margin:0,fontSize:12,color:c}},a.days<=0?`หมดอายุแล้ว ${Math.abs(a.days)} วัน`:`เหลือ ${a.days} วัน — ${fmtDate(a.endDate)}`)),h('span',{style:{fontSize:12,color:c}},'→'))})
+    ),
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}},
+      [['Projects',total,'#6b7280'],['ใกล้หมด',expiring,expiring>0?'#ca8a04':'#6b7280'],['รายรับรวม',`${fmt$(totInc)} ฿`,'#16a34a'],['กำไรรวม',`${fmt$(profit)} ฿`,profit>=0?'#16a34a':'#dc2626']].map(([lb,val,c])=>h('div',{key:lb,style:{background:C.bg2(),borderRadius:8,padding:'12px 8px',textAlign:'center'}},h('p',{style:{margin:0,fontSize:12,color:C.muted()}},lb),h('p',{style:{margin:'4px 0 0',fontSize:16,fontWeight:500,color:c}},String(val))))
+    ),
+    projects.some(p=>(p.finances||[]).length>0)&&h('div',{style:s.card()},h('p',{style:{margin:'0 0 12px',fontWeight:500,fontSize:15}},'รายรับ - รายจ่าย ต่อ Project'),h(FinanceChart,{projects})),
+    h('div',{style:s.card()},h('p',{style:{margin:'0 0 12px',fontWeight:500,fontSize:15}},'รายการใกล้หมดอายุ (90 วัน)'),
+      expiryItems.length===0?h('p',{style:{fontSize:13,color:C.muted()}},'ไม่มีรายการที่หมดอายุในช่วงนี้'):
+      expiryItems.map((item,i)=>{const t=wTag(item.endDate);return h('div',{key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`0.5px solid ${C.border()}`,cursor:'pointer'},onClick:()=>onSelect(item.projectId)},h(Tag,t),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:13,fontWeight:500}},item.label),h('p',{style:{margin:0,fontSize:12,color:C.muted()}},item.sub)),h('span',{style:{fontSize:12,color:C.muted()}},fmtDate(item.endDate)))})
+    )
+  )
+}
+
+// --- PROJECT TABS ---
+function InfoTab({p,onUpdate}){
+  const[edit,setEdit]=useState(false);const[f,setF]=useState({...p});
+  const flds=[['ชื่อ Project','name','text'],['ลูกค้า','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']];
+  return h('div',{style:s.card()},
+    edit?h('div',{},
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},flds.map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+      h(Fld,{label:'หมายเหตุ'},h('textarea',{value:f.notes||'',onChange:e=>setF({...f,notes:e.target.value})})),
+      h(Row,{style:{justifyContent:'flex-end',marginTop:12}},h(Btn,{onClick:()=>setEdit(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{onUpdate(f);setEdit(false)}},'บันทึก'))
+    ):h('div',{},
+      flds.map(([lb,k])=>p[k]?h('div',{key:k,style:{display:'flex',gap:16,marginBottom:10,fontSize:14}},h('span',{style:{minWidth:110,fontSize:13,color:C.muted()}},lb),h('span',{},k.includes('contract')?fmtDate(p[k]):p[k])):null),
+      p.notes&&h('div',{style:{marginTop:8,fontSize:13,color:C.muted(),background:C.bg2(),borderRadius:8,padding:'8px 10px'}},p.notes),
+      h(Btn,{onClick:()=>{setF({...p});setEdit(true)},style:{marginTop:12}},'แก้ไขข้อมูล')
+    )
+  )
+}
+
+function DevicesTab({p,onUpdate}){
+  const[add,setAdd]=useState(false);const[f,setF]=useState({name:'',model:'',serial:'',location:'',warrantyEnd:''});const devs=p.devices||[];
+  return h('div',{},
+    h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'อุปกรณ์ทั้งหมด'),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่มอุปกรณ์')),
+    add&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},[['ชื่ออุปกรณ์ *','name','text'],['Model','model','text'],['Serial Number','serial','text'],['ตำแหน่งติดตั้ง','location','text'],['Warranty หมด','warrantyEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+      h(Row,{style:{justifyContent:'flex-end',marginTop:10}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.name)return;onUpdate({devices:[...devs,{id:uid(),...f}]});setAdd(false);setF({name:'',model:'',serial:'',location:'',warrantyEnd:''})}},'บันทึก'))
+    ),
+    devs.length===0&&!add&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีอุปกรณ์'),
+    devs.map(d=>{const t=wTag(d.warrantyEnd);return h('div',{key:d.id,style:s.card()},
+      h(Row,{},h('div',{style:{flex:1}},h('p',{style:{margin:0,fontWeight:500,fontSize:14}},d.name),h('p',{style:{margin:'2px 0 0',fontSize:12,color:C.muted()}},[d.model,d.serial?`S/N: ${d.serial}`:'',d.location].filter(Boolean).join(' · '))),h(Tag,t),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({devices:devs.filter(x=>x.id!==d.id)})},'ลบ')),
+      d.warrantyEnd&&h('p',{style:{margin:'6px 0 0',fontSize:12,color:C.muted()}},`Warranty หมด: ${fmtDate(d.warrantyEnd)}`)
+    )})
+  )
+}
+
+function AttachmentsTab({p,onUpdate}){
+  const atts=p.attachments||[];const fileRef=useRef();const[uploading,setUploading]=useState(false);const[big,setBig]=useState(null);const[nf,setNf]=useState({show:false,title:'',note:''});
+  const doUpload=async e=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);const news=[];for(const file of files){if(file.type.startsWith('image/')){const data=await resizeImg(file);news.push({id:uid(),type:'image',name:file.name,data,date:new Date().toISOString()})}else news.push({id:uid(),type:'file',name:file.name,date:new Date().toISOString()})}onUpdate({attachments:[...atts,...news]});setUploading(false);e.target.value=''};
+  const imgs=atts.filter(a=>a.type==='image'),others=atts.filter(a=>a.type!=='image');
+  return h('div',{},
+    big&&h('div',{style:{marginBottom:16,borderRadius:12,overflow:'hidden',cursor:'pointer',border:`0.5px solid ${C.border()}`},onClick:()=>setBig(null)},h('img',{src:big,style:{width:'100%'}}),h('p',{style:{textAlign:'center',fontSize:12,color:C.muted(),padding:'6px 0'}},'กดที่รูปเพื่อปิด')),
+    h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'ไฟล์แนบ & บันทึก'),h(Btn,{onClick:()=>setNf({show:true,title:'',note:''})},'+ บันทึก'),h(BtnP,{onClick:()=>fileRef.current?.click()},uploading?'กำลังอัปโหลด...':'+ รูป/ไฟล์'),h('input',{ref:fileRef,type:'file',accept:'image/*,.pdf,.doc,.docx',multiple:true,style:{display:'none'},onChange:doUpload})),
+    nf.show&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},h(Fld,{label:'หัวข้อ *'},h('input',{value:nf.title,onChange:e=>setNf({...nf,title:e.target.value}),placeholder:'เช่น: สภาพ UPS หน้างาน'})),h(Fld,{label:'รายละเอียด'},h('textarea',{value:nf.note,onChange:e=>setNf({...nf,note:e.target.value}),placeholder:'บันทึกสิ่งที่พบ...'})),h(Row,{style:{justifyContent:'flex-end',marginTop:8}},h(Btn,{onClick:()=>setNf({show:false,title:'',note:''})},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!nf.title)return;onUpdate({attachments:[...atts,{id:uid(),type:'note',title:nf.title,note:nf.note,date:new Date().toISOString()}]});setNf({show:false,title:'',note:''})}},'บันทึก'))),
+    imgs.length>0&&h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginBottom:12}},imgs.map(a=>h('div',{key:a.id,style:{borderRadius:8,overflow:'hidden',border:`0.5px solid ${C.border()}`,cursor:'pointer',position:'relative'},onClick:()=>setBig(a.data)},h('img',{src:a.data,alt:a.name,style:{width:'100%',height:110,objectFit:'cover'}}),h('p',{style:{margin:0,padding:'4px 6px',fontSize:11,color:C.muted(),background:C.bg2(),whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.name),h('button',{style:{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',padding:'2px 6px'},onClick:ev=>{ev.stopPropagation();onUpdate({attachments:atts.filter(x=>x.id!==a.id)})}},'ลบ')))),
+    others.map(a=>h('div',{key:a.id,style:s.card()},h(Row,{},h('span',{style:{fontSize:18}},'📋'),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontSize:14,fontWeight:500}},a.title||a.name),a.note&&h('p',{style:{margin:'3px 0 0',fontSize:12,color:C.muted(),whiteSpace:'pre-wrap'}},a.note),h('p',{style:{margin:'3px 0 0',fontSize:11,color:C.muted()}},fmtDate(a.date))),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({attachments:atts.filter(x=>x.id!==a.id)})},'ลบ')))),
+    atts.length===0&&!nf.show&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีไฟล์แนบ')
+  )
+}
+
+function FinanceTab({p,onUpdate}){
+  const fins=p.finances||[];const[add,setAdd]=useState(false);const[f,setF]=useState({type:'income',description:'',amount:'',date:new Date().toISOString().slice(0,10)});
+  const inc=fins.filter(x=>x.type==='income').reduce((a,x)=>a+Number(x.amount),0);const exp=fins.filter(x=>x.type==='expense').reduce((a,x)=>a+Number(x.amount),0);const prof=inc-exp;
+  return h('div',{},
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}},[['รายรับ',inc,'#16a34a'],['รายจ่าย',exp,'#dc2626'],['กำไร',prof,prof>=0?'#16a34a':'#dc2626']].map(([lb,val,c])=>h('div',{key:lb,style:{background:C.bg2(),borderRadius:8,padding:'12px 8px',textAlign:'center'}},h('p',{style:{margin:0,fontSize:12,color:C.muted()}},lb),h('p',{style:{margin:'4px 0 0',fontSize:16,fontWeight:500,color:c}},`${fmt$(val)} ฿`)))),
+    h(Row,{style:{marginBottom:12}},h('p',{style:{margin:0,fontWeight:500,fontSize:15,flex:1}},'รายการทั้งหมด'),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่มรายการ')),
+    add&&h('div',{style:s.card({borderColor:'#378add',marginBottom:12})},
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},h(Fld,{label:'ประเภท'},h('select',{value:f.type,onChange:e=>setF({...f,type:e.target.value})},h('option',{value:'income'},'รายรับ'),h('option',{value:'expense'},'รายจ่าย'))),h(Fld,{label:'วันที่'},h('input',{type:'date',value:f.date,onChange:e=>setF({...f,date:e.target.value})})),h('div',{style:{gridColumn:'1/-1'}},h(Fld,{label:'รายละเอียด *'},h('input',{value:f.description,onChange:e=>setF({...f,description:e.target.value}),placeholder:'เช่น: ค่าซ่อม, ค่า spare part...'}))),h(Fld,{label:'จำนวนเงิน (฿) *'},h('input',{type:'number',value:f.amount,onChange:e=>setF({...f,amount:e.target.value}),placeholder:'0'}))),
+      h(Row,{style:{justifyContent:'flex-end',marginTop:10}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.description||!f.amount)return;onUpdate({finances:[...fins,{id:uid(),...f}]});setAdd(false);setF({type:'income',description:'',amount:'',date:new Date().toISOString().slice(0,10)})}},'บันทึก'))
+    ),
+    fins.length===0&&!add&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,padding:32}},'ยังไม่มีรายการ'),
+    [...fins].sort((a,b)=>b.date>a.date?1:-1).map(fi=>h('div',{key:fi.id,style:s.card()},
+      h(Row,{},h('span',{style:{background:fi.type==='income'?'#dcfce7':'#fee2e2',color:fi.type==='income'?'#16a34a':'#dc2626',borderRadius:6,padding:'2px 8px',fontSize:11,fontWeight:500}},fi.type==='income'?'รับ':'จ่าย'),h('p',{style:{margin:0,flex:1,fontSize:14}},fi.description),h('p',{style:{margin:0,fontWeight:500,fontSize:14}},`${fmt$(fi.amount)} ฿`),h(Btn,{style:{color:'#dc2626',padding:'3px 8px',fontSize:12},onClick:()=>onUpdate({finances:fins.filter(x=>x.id!==fi.id)})},'ลบ')),
+      h('p',{style:{margin:'4px 0 0',fontSize:11,color:C.muted()}},fmtDate(fi.date))
+    ))
+  )
+}
+
+function AITab({p}){
+  const[msgs,setMsgs]=useState([]);const[inp,setInp]=useState('');const[loading,setLoading]=useState(false);const endRef=useRef();
+  const ctx=`Project: ${p.name}, ลูกค้า: ${p.client}, สัญญาหมด: ${fmtDate(p.contractEnd)}, อุปกรณ์: ${(p.devices||[]).map(d=>`${d.name} ${d.model||''} S/N:${d.serial||'-'} (Warranty: ${fmtDate(d.warrantyEnd)})`).join('; ')||'ไม่มี'}`;
+  const[apiKey,setApiKey]=useState(localStorage.getItem('ai_api_key')||'');
+  const[showKey,setShowKey]=useState(!localStorage.getItem('ai_api_key'));
+
+  const send=async()=>{
+    if(!inp.trim()||loading)return;
+    const msg=inp.trim();setInp('');setLoading(true);
+    const nm=[...msgs,{role:'user',content:msg}];setMsgs(nm);
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`คุณคือผู้ช่วย AI สำหรับงาน IT/UPS Service ตอบภาษาไทย สั้นกระชับ\nProject Context:\n${ctx}`,messages:nm})});
+      const data=await res.json();
+      if(data.error)setMsgs([...nm,{role:'assistant',content:'Error: '+data.error.message}]);
+      else setMsgs([...nm,{role:'assistant',content:data.content?.[0]?.text||'ไม่สามารถตอบได้'}]);
+    }catch(e){setMsgs([...nm,{role:'assistant',content:'เกิดข้อผิดพลาด: '+e.message}])}
+    setLoading(false);setTimeout(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),100);
+  };
+
+  return h('div',{},
+    showKey&&h('div',{style:{...s.card(),marginBottom:12,borderColor:'#f59e0b'}},
+      h('p',{style:{margin:'0 0 8px',fontWeight:500,fontSize:14}},'ใส่ Anthropic API Key'),
+      h('p',{style:{margin:'0 0 10px',fontSize:12,color:C.muted()}},'ได้จาก console.anthropic.com — เก็บไว้ใน browser นี้เท่านั้น'),
+      h(Row,{},h('input',{value:apiKey,onChange:e=>setApiKey(e.target.value),placeholder:'sk-ant-...',type:'password',style:{flex:1}}),h(BtnP,{onClick:()=>{localStorage.setItem('ai_api_key',apiKey);setShowKey(false)}},'บันทึก'))
+    ),
+    h('div',{style:{minHeight:280,maxHeight:380,overflowY:'auto',display:'flex',flexDirection:'column',gap:8,marginBottom:12,padding:'4px 0'}},
+      msgs.length===0&&h('p',{style:{textAlign:'center',color:C.muted(),fontSize:13,marginTop:40}},'ถามน้อง AI เรื่องเทคนิคหรือข้อมูล Project ได้เลยครับ'),
+      msgs.map((m,i)=>h('div',{key:i,style:{alignSelf:m.role==='user'?'flex-end':'flex-start',maxWidth:'86%',background:m.role==='user'?'#378add':isDark()?'#3a3a38':'#f0f0ee',color:m.role==='user'?'#ffffff':isDark()?'#e8e6e0':'#1a1a18',padding:'8px 12px',borderRadius:10,fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'}},m.content)),
+      loading&&h('div',{style:{alignSelf:'flex-start',color:C.muted(),fontSize:13}},'กำลังคิด...'),
+      h('div',{ref:endRef})
+    ),
+    h(Row,{},
+      h('input',{style:{flex:1,...s.input},value:inp,onChange:e=>setInp(e.target.value),onKeyDown:e=>e.key==='Enter'&&!e.shiftKey&&send(),placeholder:'ถามเรื่องเทคนิค หรือข้อมูล Project...'}),
+      !apiKey&&h(Btn,{onClick:()=>setShowKey(true),style:{fontSize:12}},'ใส่ API Key'),
+      apiKey&&h(BtnP,{onClick:send,disabled:loading},'ส่ง')
+    )
+  )
+}
+
+function ProjectDetail({p,onBack,onUpdate}){
+  const[tab,setTab]=useState('info');const[exp,setExp]=useState(null);
+  const tabs=[{id:'info',lb:'ข้อมูล'},{id:'devices',lb:`อุปกรณ์ (${(p.devices||[]).length})`},{id:'attachments',lb:`ไฟล์ (${(p.attachments||[]).length})`},{id:'finance',lb:'รายรับ-จ่าย'},{id:'ai',lb:'ถาม AI'}];
+  const wt=wTag(p.contractEnd);
+  return h('div',{},
+    h(Row,{style:{marginBottom:16}},h(Btn,{onClick:onBack,style:{padding:'5px 10px',marginRight:4}},'← กลับ'),h('div',{style:{flex:1}},h('p',{style:{margin:0,fontWeight:500,fontSize:17}},p.name),h('p',{style:{margin:'1px 0 0',fontSize:13,color:C.muted()}},p.client+(p.location?` · ${p.location}`:''))),h(Tag,wt),h(Btn,{onClick:()=>setExp(exp?null:'show'),style:{marginLeft:4}},'↗ Export')),
+    exp&&h('div',{style:s.card({borderColor:C.border(),marginBottom:12})},
+      h(Row,{style:{marginBottom:10}},h('p',{style:{margin:0,fontWeight:500,flex:1}},'Export รายงาน'),h(Btn,{onClick:()=>setExp(null)},'✕')),
+      h(Row,{style:{gap:8,marginBottom:exp==='email'?12:0}},h(BtnP,{onClick:()=>exportPDF(p)},'📄 PDF / พิมพ์'),h(Btn,{onClick:()=>setExp(exp==='email'?'show':'email')},'✉️ ร่าง Email')),
+      exp==='email'&&h(EmailInline,{p,onClose:()=>setExp(null)})
+    ),
+    h('div',{style:{display:'flex',gap:2,borderBottom:`0.5px solid ${C.border()}`,marginBottom:14,overflowX:'auto'}},tabs.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),style:{background:'none',border:'none',cursor:'pointer',padding:'7px 10px',fontSize:13,whiteSpace:'nowrap',color:tab===t.id?C.text():C.muted(),borderBottom:tab===t.id?`2px solid ${C.text()}`:'2px solid transparent',fontWeight:tab===t.id?500:400}},t.lb))),
+    tab==='info'&&h(InfoTab,{p,onUpdate}),tab==='devices'&&h(DevicesTab,{p,onUpdate}),tab==='attachments'&&h(AttachmentsTab,{p,onUpdate}),tab==='finance'&&h(FinanceTab,{p,onUpdate}),tab==='ai'&&h(AITab,{p})
+  )
+}
+
+function EmailInline({p,onClose}){
+  const[copied,setCopied]=useState(false);const fins=p.finances||[],devs=p.devices||[];const inc=fins.filter(f=>f.type==='income').reduce((a,f)=>a+Number(f.amount),0);const exp=fins.filter(f=>f.type==='expense').reduce((a,f)=>a+Number(f.amount),0);const wt=wTag(p.contractEnd);
+  const subject=`[รายงาน] Project ${p.name} — ${p.client}`;
+  const body=`เรียนผู้เกี่ยวข้อง,\n\nขอแจ้งสถานะ Project: ${p.name}\nลูกค้า: ${p.client}${p.location?'\nสถานที่: '+p.location:''}\nสัญญา: ${fmtDate(p.contractStart)} ถึง ${fmtDate(p.contractEnd)} (${wt.t})\n\nอุปกรณ์ (${devs.length} รายการ):\n${devs.map(d=>`- ${d.name} ${d.model||''} | S/N: ${d.serial||'-'} | Warranty: ${fmtDate(d.warrantyEnd)}`).join('\n')||'ไม่มีรายการ'}\n\nสรุปการเงิน:\n- รายรับ: ${fmt$(inc)} ฿\n- รายจ่าย: ${fmt$(exp)} ฿\n- กำไร: ${fmt$(inc-exp)} ฿\n\nหากมีข้อสงสัยกรุณาติดต่อกลับ\nขอแสดงความนับถือ`;
+  return h('div',{style:{marginTop:12}},
+    h(Fld,{label:'Subject'},h('input',{value:subject,readOnly:true})),
+    h(Fld,{label:'เนื้อหา'},h('textarea',{value:body,readOnly:true,style:{height:160,fontSize:12,lineHeight:1.6}})),
+    h(Row,{style:{justifyContent:'flex-end',marginTop:8}},h(Btn,{onClick:()=>{navigator.clipboard?.writeText(body).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)})}},copied?'คัดลอกแล้ว ✓':'คัดลอก'),h('a',{href:`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,style:{...s.btnP(),textDecoration:'none',display:'inline-block'}},'เปิดใน Email App'))
+  )
+}
+
+function ProjectList({projects,onSelect,onAdd}){
+  const[add,setAdd]=useState(false);const[f,setF]=useState({name:'',client:'',location:'',contractStart:'',contractEnd:''});
+  const sl=p=>{const d=daysLeft(p.contractEnd);if(d===null||d>60)return'#22c55e';if(d<=0)return'#ef4444';return'#f59e0b'};
+  return h('div',{},
+    h(Row,{style:{marginBottom:20}},h('div',{style:{flex:1}},h('h2',{style:{margin:0,fontSize:20,fontWeight:500}},'Projects'),h('p',{style:{margin:'2px 0 0',fontSize:13,color:C.muted()}},`${projects.length} โปรเจกต์`)),h(BtnP,{onClick:()=>setAdd(true)},'+ เพิ่ม Project')),
+    add&&h('div',{style:s.card({borderColor:'#378add'})},
+      h('p',{style:{margin:'0 0 14px',fontWeight:500,fontSize:15}},'Project ใหม่'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},[['ชื่อ Project *','name','text'],['ชื่อลูกค้า *','client','text'],['สถานที่','location','text'],['เบอร์ติดต่อ','phone','text'],['วันเริ่มสัญญา','contractStart','date'],['วันหมดสัญญา','contractEnd','date']].map(([lb,k,tp])=>h(Fld,{key:k,label:lb},h('input',{type:tp,value:f[k]||'',onChange:e=>setF({...f,[k]:e.target.value})})))),
+      h(Row,{style:{justifyContent:'flex-end',marginTop:14}},h(Btn,{onClick:()=>setAdd(false)},'ยกเลิก'),h(BtnP,{onClick:()=>{if(!f.name||!f.client)return alert('กรุณากรอกชื่อ Project และลูกค้า');onAdd(f);setAdd(false);setF({name:'',client:'',location:'',contractStart:'',contractEnd:''})}},'บันทึก'))
+    ),
+    projects.length===0&&!add&&h('div',{style:{textAlign:'center',padding:48,color:C.muted(),fontSize:14}},'ยังไม่มี Project — กด "+ เพิ่ม Project"'),
+    projects.map(p=>{
+      const wt=wTag(p.contractEnd);const inc=(p.finances||[]).filter(f=>f.type==='income').reduce((a,f)=>a+Number(f.amount),0);const ex=(p.finances||[]).filter(f=>f.type==='expense').reduce((a,f)=>a+Number(f.amount),0);
+      return h('div',{key:p.id,style:{...s.card(),cursor:'pointer',borderLeft:`3px solid ${sl(p)}`},onClick:()=>onSelect(p.id)},
+        h(Row,{},h('div',{style:{flex:1}},h('p',{style:{margin:0,fontWeight:500,fontSize:15}},p.name),h('p',{style:{margin:'2px 0 0',fontSize:13,color:C.muted()}},p.client+(p.location?` · ${p.location}`:'')),),h(Tag,wt)),
+        h(Row,{style:{marginTop:10,fontSize:12,color:C.muted()}},h('span',{},`${(p.devices||[]).length} อุปกรณ์`),h('span',{style:{marginLeft:12}},`${(p.attachments||[]).length} ไฟล์`),h('span',{style:{marginLeft:'auto',color:inc-ex>=0?'#16a34a':'#dc2626'}},`กำไร: ${fmt$(inc-ex)} ฿`))
+      )
+    })
+  )
+}
+
+// --- MAIN APP ---
+function App(){
+  const[projects,setProjects]=useState([]);const[selId,setSelId]=useState(null);const[loading,setLoading]=useState(true);const[nav,setNav]=useState('dashboard');const[syncStatus,setSyncStatus]=useState('none');const[showSettings,setShowSettings]=useState(false);
+  const sc={ok:'#22c55e',saving:'#f59e0b',error:'#ef4444',loading:'#f59e0b',none:'#9ca3af'};
+  const scLabel={ok:'ซิงก์แล้ว',saving:'กำลังซิงก์...',error:'ซิงก์ไม่สำเร็จ',loading:'กำลังโหลด...',none:'เชื่อมต่อ Sheets'};
+
+  useEffect(()=>{loadData(setSyncStatus).then(d=>{setProjects(d);setLoading(false)});},[]);
+
+  const save=np=>{setProjects(np);saveData(np,setSyncStatus)};
+  const addProject=data=>{const p={id:uid(),...data,devices:[],attachments:[],finances:[],createdAt:new Date().toISOString()};save([...projects,p]);setSelId(p.id);setNav('projects')};
+  const update=(id,upd)=>save(projects.map(p=>p.id===id?{...p,...upd}:p));
+  const alerts=getAlerts(projects);
+  const sel=projects.find(p=>p.id===selId);
+
+  if(loading)return h('div',{style:{padding:48,textAlign:'center'}},h('p',{style:{color:C.muted(),fontSize:14}},'กำลังโหลดข้อมูล...'));
+
+  return h('div',{},
+    h('div',{style:{borderBottom:`0.5px solid ${C.border()}`,marginBottom:16,display:'flex',gap:4,alignItems:'center'}},
+      h('span',{style:{fontSize:15,fontWeight:600,marginRight:8,padding:'0 4px 10px',color:'#378add'}},'ServiceAI'),
+      ['dashboard','projects'].map(v=>h('button',{key:v,onClick:()=>{setNav(v);setSelId(null);setShowSettings(false)},style:{background:'none',border:'none',cursor:'pointer',padding:'10px 14px',fontSize:13,fontWeight:nav===v&&!sel&&!showSettings?500:400,color:nav===v&&!sel&&!showSettings?C.text():C.muted(),borderBottom:nav===v&&!sel&&!showSettings?`2px solid ${C.text()}`:'2px solid transparent'}},v==='dashboard'?'Dashboard':'Projects')),
+      alerts.length>0&&h('span',{style:{background:'#fee2e2',color:'#dc2626',borderRadius:10,padding:'1px 7px',fontSize:11,fontWeight:500,marginLeft:4}},String(alerts.length)),
+      h('div',{style:{marginLeft:'auto',paddingBottom:10}},
+        h('button',{onClick:()=>{setShowSettings(!showSettings);setSelId(null)},style:{display:'flex',alignItems:'center',gap:6,fontSize:12,color:C.muted(),background:'transparent',border:`0.5px solid ${C.border()}`,borderRadius:20,padding:'4px 10px',cursor:'pointer'}},
+          h('span',{style:{width:7,height:7,borderRadius:'50%',background:sc[syncStatus]||'#9ca3af',display:'inline-block'}}),
+          h('span',{},scLabel[syncStatus]||'เชื่อมต่อ Sheets')
+        )
+      )
+    ),
+    showSettings&&h(SettingsPanel,{syncStatus,onClose:()=>setShowSettings(false),onConnected:(data)=>{if(data){setProjects(data);saveLocal(data)}setSyncStatus(data?'ok':'none');setShowSettings(false)}}),
+    !showSettings&&(sel?h(ProjectDetail,{p:sel,onBack:()=>setSelId(null),onUpdate:upd=>update(sel.id,upd)}):nav==='dashboard'?h(DashboardView,{projects,onSelect:id=>{setSelId(id);setNav('projects')}}):h(ProjectList,{projects,onSelect:setSelId,onAdd:addProject}))
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>
